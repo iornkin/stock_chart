@@ -7,8 +7,10 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
-export type LocalKey = "portfolio" | "virtual" | "strategies" | "runs";
-export const LOCAL_KEYS: LocalKey[] = ["portfolio", "virtual", "strategies", "runs"];
+export type LocalKey = "portfolio" | "strategies" | "runs";
+export const LOCAL_KEYS: LocalKey[] = ["portfolio", "strategies", "runs"];
+/** 없앤 기능의 옛 데이터 (가상 투자 계좌) — 이 브라우저에 남지 않게 지운다 */
+const LEGACY_KEYS = ["virtual"];
 
 const DB_NAME = "usi-local";
 const STORE = "kv";
@@ -58,8 +60,21 @@ export function storageBackend(): Promise<Backend> {
         return "memory" as const;
       }
     })();
+    backendPromise.then(dropLegacy).catch(() => {});
   }
   return backendPromise;
+}
+
+function dropLegacy(b: Backend) {
+  for (const k of LEGACY_KEYS) {
+    if (b === "indexeddb") idbRequest("readwrite", (s) => s.delete(k)).catch(() => {});
+    else if (b === "localstorage")
+      try {
+        localStorage.removeItem(LS_PREFIX + k);
+      } catch {
+        /* 무시 */
+      }
+  }
 }
 
 function idbRequest<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest): Promise<T> {

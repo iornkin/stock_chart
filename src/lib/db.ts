@@ -187,15 +187,40 @@ export function getDb(): DatabaseSync {
   const db = new DatabaseSync(file);
   // 다른 프로세스(정적 빌드 작업자·워커)가 같은 DB 를 동시에 열 수 있으므로 잠금 대기를 가장 먼저 설정
   db.exec("PRAGMA busy_timeout = 10000;");
-  db.exec("PRAGMA journal_mode = WAL;");
+  // WAL 전환은 잠금을 올리다 서로 막히면 대기 없이 바로 '잠김'을 돌려줄 수 있어 잠깐 쉬었다 다시 시도
+  withBusyRetry(() => db.exec("PRAGMA journal_mode = WAL;"));
   db.exec("PRAGMA synchronous = NORMAL;");
   db.exec("PRAGMA foreign_keys = ON;");
-  db.exec(SCHEMA);
+  // 읽기 잠금에서 쓰기로 올리는 대신 처음부터 쓰기 잠금을 잡아(잠금 대기 적용) 스키마를 만든다
+  withBusyRetry(() => {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(SCHEMA);
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+  });
   migrate(db);
   scrubLeakedSecrets(db);
   globalThis.__stockDb = db;
   globalThis.__stockDbPath = file;
   return db;
+}
+
+/** SQLITE_BUSY(잠김)이면 잠깐 쉬었다 다시 시도 (동기 코드라 Atomics.wait 로 대기) */
+function withBusyRetry(fn: () => void, tries = 40) {
+  for (let i = 0; ; i++) {
+    try {
+      fn();
+      return;
+    } catch (e) {
+      const msg = String((e as Error).message ?? e);
+      if (i >= tries || !/locked|busy/i.test(msg)) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25 + Math.floor(Math.random() * 50));
+    }
+  }
 }
 
 /**
@@ -207,7 +232,7 @@ function migrate(db: DatabaseSync) {
   // 2026-10: Yahoo range=max 응답이 월봉으로 줄어든 채 일·주봉으로 저장된 문제 → 한 번 지우고 다시 받는다
   const barsFixed = () => Boolean(db.prepare("SELECT value FROM settings WHERE key='migration_bars_granularity_v1'").get());
   if (cols("news").has("image") && barsFixed()) return;
-  db.exec("BEGIN IMMEDIATE");
+  withBusyRetry(() => db.exec("BEGIN IMMEDIATE"));
   try {
     if (!cols("news").has("image")) db.exec("ALTER TABLE news ADD COLUMN image TEXT");
     if (!barsFixed()) {

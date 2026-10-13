@@ -1,5 +1,5 @@
 /**
- * 사이트 메뉴 구조 (주 메뉴 10개 + 메뉴 안의 하위 화면)
+ * 사이트 메뉴 구조 (주 메뉴 9개 + 메뉴 안의 하위 화면)
  * 하위 화면이 있는 메뉴는 화면 위쪽에 탭으로 보여 준다.
  */
 export interface NavPage {
@@ -52,7 +52,6 @@ export const SECTIONS: NavSection[] = [
     ],
   },
   { key: "portfolio", group: "내 투자", label: "내 자산", short: "내 자산", href: "/portfolio", icon: "M3 7h18v13H3zM3 7l3-4h12l3 4M16 13.5h2", pages: [] },
-  { key: "paper", group: "내 투자", label: "가상 투자", short: "가상", href: "/paper", icon: "M9 3h6M10 3v6L4.5 18.5A1.6 1.6 0 006 21h12a1.6 1.6 0 001.5-2.5L14 9V3M7 15h10", pages: [] },
   { key: "backtest", group: "전략 연구", label: "백테스팅", short: "백테스트", href: "/backtest", icon: "M3 12a9 9 0 109-9 9 9 0 00-6.4 2.6L3 8M3 3v5h5M12 7v5l3 2", pages: [] },
   {
     key: "simulate",

@@ -1,29 +1,49 @@
 "use client";
-/** 내 자산 — 간편 입력 / 거래 내역 관리, 자산 요약, 비중, 분배금, 자산 가치 변화 */
+/** 내 자산 — 간편 입력 / 거래 내역 관리, 수익률(달러 기준·원화 기준), 비중, 분배금, 세금, 자산 가치 변화 */
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { usePortfolio, useFx, useSeriesMap, etToday, QUOTE_OLD_MS } from "@/lib/client/user-data";
+import { usePortfolio, useSeriesMap, etToday, QUOTE_OLD_MS } from "@/lib/client/user-data";
+import { usePortfolioReturns } from "@/lib/client/portfolio-returns";
+import type { PortfolioReturns, ReturnFigures } from "@/lib/portfolio/returns";
 import { usePortfolioSummary, type PortfolioSummary } from "@/lib/client/portfolio-summary";
-import { usePrefs, setPrefs } from "@/lib/client/prefs";
 import { computeLedger, convertSimpleToLedger, ledgerTimeline } from "@/lib/portfolio/ledger";
 import { newId, TXN_KO, type PortfolioData, type SimpleHolding, type Txn, type TxnType } from "@/lib/portfolio/types";
 import { closeOn, type PriceSeries } from "@/lib/sim/series";
 import { getInstrument, normalizeSymbol } from "@/lib/instruments";
 import { formatEt, relativeTime, addDays } from "@/lib/time";
 import { Notice, Section, Empty } from "@/components/ui";
-import { categoryOf, Field, KV, LocalOnlyNote, Money, parseNum, pct, Seg, signedUsd, SymbolField, tone, usd, krw } from "@/components/sim/common";
+import { categoryOf, Field, KV, LocalOnlyNote, parseNum, pct, Seg, signedKrw, signedUsd, SymbolField, tone, usd, krw } from "@/components/sim/common";
 import { SimLineChart, WeightBars } from "@/components/sim/charts";
 import PanelTabs from "@/components/PanelTabs";
 import TaxSection from "./TaxSection";
 import { fetchSeries } from "@/lib/client/data-api";
 
+export type Basis = "usd" | "krw";
+const BASIS_KEY = "usi-portfolio-basis";
+
 export default function PortfolioClient() {
   const store = usePortfolio();
   const p = store.value;
   const s = usePortfolioSummary(p);
-  const fx = useFx();
-  const [prefs] = usePrefs();
+  const ret = usePortfolioReturns(p, s);
   const today = etToday();
+  // 달러 기준 / 원화 기준(환율 반영) — 이 브라우저에 기억
+  const [basis, setBasisState] = useState<Basis>("usd");
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(BASIS_KEY) === "krw") setBasisState("krw");
+    } catch {
+      /* 무시 */
+    }
+  }, []);
+  const setBasis = (b: Basis) => {
+    setBasisState(b);
+    try {
+      localStorage.setItem(BASIS_KEY, b);
+    } catch {
+      /* 무시 */
+    }
+  };
   // 처음 열었을 때 비어 있었다면, 첫 종목을 넣은 뒤에도 입력 탭을 계속 보여 준다
   const [startedEmpty, setStartedEmpty] = useState<boolean | null>(null);
   useEffect(() => {
@@ -42,24 +62,37 @@ export default function PortfolioClient() {
   if (!store.loaded) return <div className="skeleton h-64" aria-label="저장된 자산을 불러오는 중" />;
 
   const save = (fn: (cur: PortfolioData) => PortfolioData) => store.set((cur) => ({ ...fn(cur), updatedAt: Date.now() }));
+  const view: View = { r: ret.r, basis };
 
   const tabs = [
-    { key: "holdings", label: "보유 종목", content: <AllocationSection s={s} /> },
+    { key: "holdings", label: "보유 종목", content: <HoldingsSection s={s} v={view} /> },
     { key: "income", label: "분배금", content: <DividendSection s={s} /> },
     { key: "tax", label: "세금", content: <TaxSection p={p} s={s} /> },
     { key: "history", label: "자산 추이", content: <HistorySection p={p} s={s} /> },
-    { key: "krw", label: "원화 환산", content: <KrwSection s={s} p={p} fx={fx} /> },
-    { key: "input", label: p.mode === "simple" ? "보유 종목 입력" : "거래 입력·내역", content: <InputSection p={p} save={save} s={s} /> },
+    { key: "input", label: p.mode === "simple" ? "보유 종목 입력" : "거래 입력·내역", content: <InputSection p={p} save={save} s={s} v={view} /> },
   ];
   return (
     <div className="flex flex-col gap-5">
       {store.error && <Notice tone="critical" title="저장 오류">{store.error}</Notice>}
-      <SummarySection s={s} fx={fx.rate} showKrw={prefs.showKrw} />
-      {s.empty ? <InputSection p={p} save={save} s={s} /> : <PanelTabs label="내 자산 화면" tabs={tabs} initial={startedEmpty ? "input" : "holdings"} />}
+      <SummarySection s={s} v={view} setBasis={setBasis} fxTime={ret.fxTime} fxSource={ret.fxSource} loading={ret.loading} />
+      {s.empty ? <InputSection p={p} save={save} s={s} v={view} /> : <PanelTabs label="내 자산 화면" tabs={tabs} initial={startedEmpty ? "input" : "holdings"} />}
       <LocalOnlyNote what="입력한 보유 종목·거래 내역·현금·메모" />
     </div>
   );
 }
+
+/** 화면 전체가 같은 기준(달러/원화)으로 보이도록 함께 넘기는 값 */
+interface View {
+  r: PortfolioReturns;
+  basis: Basis;
+}
+
+/** 선택한 기준의 숫자 (원화 기준을 계산할 수 없으면 null) */
+function pick<T extends { usd: ReturnFigures; krw: ReturnFigures | null }>(x: T, basis: Basis): ReturnFigures | null {
+  return basis === "usd" ? x.usd : x.krw;
+}
+const money = (v: number | null | undefined, basis: Basis) => (basis === "usd" ? usd(v) : krw(v));
+const signed = (v: number | null | undefined, basis: Basis) => (basis === "usd" ? signedUsd(v) : signedKrw(v));
 
 // ─────────────────────────────── 요약 ───────────────────────────────
 
@@ -77,17 +110,23 @@ function QuoteBasis({ s }: { s: PortfolioSummary }) {
   );
 }
 
-function SummarySection({ s, fx, showKrw }: { s: PortfolioSummary; fx: number | null; showKrw: boolean }) {
+function SummarySection({ s, v, setBasis, fxTime, fxSource, loading }: { s: PortfolioSummary; v: View; setBasis: (b: Basis) => void; fxTime: number | null; fxSource: string | null; loading: boolean }) {
   if (s.empty)
     return (
       <Notice title="아직 입력한 자산이 없습니다">
-        아래에서 보유 종목을 입력하면 총자산·손익·분배금을 계산합니다. 입력 전에는 어떤 금액도 표시하지 않습니다.
+        아래에서 보유 종목을 입력하면 총자산·수익률·분배금을 계산합니다. 입력 전에는 어떤 금액도 표시하지 않습니다.
       </Notice>
     );
-  const ledger = s.mode === "ledger";
+  const { r, basis } = v;
+  const ledger = r.mode === "ledger";
+  const a = basis === "usd" ? r.usd : r.krw;
   const missing = s.missingPrices.length > 0;
   return (
     <section className="card p-4 sm:p-6" aria-label="자산 요약">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-[17px] font-bold tracking-tight">내 투자 성과</h2>
+        <Seg label="수익률 기준" value={basis} onChange={setBasis} options={[{ v: "usd", l: "달러 기준" }, { v: "krw", l: "원화 기준 (환율 반영)" }]} />
+      </div>
       {missing && (
         <div className="mb-3">
           <Notice tone="warn" title="시세 없는 종목">
@@ -95,19 +134,57 @@ function SummarySection({ s, fx, showKrw }: { s: PortfolioSummary; fx: number | 
           </Notice>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-4">
-        <BigStat label="총자산" value={<Money v={missing ? null : s.totalAssets} fx={showKrw ? fx : null} />} sub={`현금 ${usd(s.cash)} 포함`} />
-        <BigStat
-          label={ledger ? "투자 손익" : "평가 손익"}
-          value={<Money v={ledger ? s.totalPnl : missing ? null : s.unrealized} fx={showKrw ? fx : null} signed />}
-          valueClass={tone(ledger ? s.totalPnl : s.unrealized)}
-          sub={ledger ? `${pct(s.totalReturnPct)} · 순납입 원금 ${usd(s.netContributions)} 대비` : `${pct(s.totalReturnPct)} · 매수 원가 대비`}
-        />
-        <BigStat label="예상 연간 분배금" value={usd(s.expectedAnnual)} sub="최근 12개월 실제 지급 기준 추정" />
-        <BigStat label={ledger ? "실현 손익" : "매수 원가"} value={ledger ? signedUsd(s.realized) : usd(s.totalCost)} valueClass={ledger ? tone(s.realized) : ""} sub={ledger ? `미실현 ${signedUsd(missing ? null : s.unrealized)}` : `평가금액 ${usd(missing ? null : s.marketValue)}`} />
-      </div>
-      <div className="mt-3 border-t border-line pt-2">
+      {basis === "krw" && !r.krw ? (
+        <Notice tone="warn" title="원화 기준으로 계산할 수 없습니다">
+          {loading ? "환율 기록을 불러오는 중입니다." : r.krwUnavailable.join(" ") || "환율 정보가 부족합니다."}
+        </Notice>
+      ) : (
+        a && (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-4">
+            <BigStat label="총자산" value={money(a.totalAssets, basis)} sub={`현금 ${basis === "usd" ? usd(s.cash) : krw(r.fxNow ? s.cash * r.fxNow : null)} 포함`} />
+            <BigStat
+              label="총수익률"
+              value={pct(a.totalReturnPct)}
+              valueClass={tone(a.totalReturnPct)}
+              sub={
+                <>
+                  <span className={tone(a.totalGain)}>{signed(a.totalGain, basis)}</span> · {ledger ? `투자 원금 ${money(a.invested, basis)} 대비` : r.dividendsEstimated ? "분배금(추정) 포함" : "매수 원가 대비"}
+                </>
+              }
+            />
+            <BigStat label="평가 수익률" value={pct(a.unrealizedPct)} valueClass={tone(a.unrealizedPct)} sub={<><span className={tone(a.unrealized)}>{signed(a.unrealized, basis)}</span> · 지금 보유한 종목만</>} />
+            {basis === "krw" ? (
+              <BigStat
+                label="환율 효과"
+                value={signed(a.fxEffect, basis)}
+                valueClass={tone(a.fxEffect)}
+                sub={a.fxEffect !== null && a.fxEffect !== undefined ? (a.fxEffect >= 0 ? "환차익 (원/달러가 오른 만큼)" : "환차손 (원/달러가 내린 만큼)") : undefined}
+              />
+            ) : (
+              <BigStat
+                label={ledger ? "받은 분배금 (세후)" : "받은 분배금 (추정)"}
+                value={a.dividends !== null ? usd(a.dividends) : "-"}
+                sub={ledger ? `실현 손익 ${signedUsd(a.realized)}` : r.dividendsEstimated ? "최초 매수일 이후 실제 지급 × 지금 수량 · 세후 15%" : "최초 매수일을 넣으면 추정합니다"}
+              />
+            )}
+          </div>
+        )
+      )}
+      {r.usd.totalReturnPct !== null && r.krw?.totalReturnPct !== null && r.krw && (
+        <p className="mt-4 rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-2">
+          총수익률 · 달러 기준 <b className={`num ${tone(r.usd.totalReturnPct)}`}>{pct(r.usd.totalReturnPct)}</b> → 원화 기준{" "}
+          <b className={`num ${tone(r.krw.totalReturnPct)}`}>{pct(r.krw.totalReturnPct)}</b>
+          <span className="text-xs text-muted"> (환율 효과 {signedKrw(r.krw.fxEffect)})</span>
+        </p>
+      )}
+      <div className="mt-3 flex flex-col gap-0.5 border-t border-line pt-2">
         <QuoteBasis s={s} />
+        {basis === "krw" && r.fxNow && (
+          <p className="text-[11px] text-muted">
+            현재 환율 ₩{r.fxNow.toLocaleString("ko-KR", { maximumFractionDigits: 2 })} ({fxTime ? formatEt(fxTime) : "-"} · {fxSource ?? "-"}) · 매수·매도·분배금은 그때 환율
+            {r.fxEstimated > 0 && ` (환율을 적지 않은 ${r.fxEstimated}건은 그날 원/달러 종가로 근사)`}
+          </p>
+        )}
       </div>
     </section>
   );
@@ -123,62 +200,124 @@ function BigStat({ label, value, sub, valueClass = "" }: { label: string; value:
   );
 }
 
-function AllocationSection({ s }: { s: PortfolioSummary }) {
-  if (s.missingPrices.length) return <Notice tone="warn">{s.missingPrices.join(", ")} 시세가 없어 비중을 계산하지 않았습니다.</Notice>;
+function HoldingsSection({ s, v }: { s: PortfolioSummary; v: View }) {
+  const { r, basis } = v;
   const byType = new Map<string, number>();
   for (const h of s.holdings) byType.set(categoryOf(h.symbol), (byType.get(categoryOf(h.symbol)) ?? 0) + (h.value ?? 0));
   if (s.cash > 0) byType.set("현금", s.cash);
+  const ledger = r.mode === "ledger";
   return (
-    <Section title="비중">
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div>
-          <p className="mb-2 text-xs font-semibold text-ink-2">종목별 (현금 포함)</p>
-          <WeightBars items={[...s.holdings.map((h) => ({ label: h.symbol, value: h.value ?? 0 })), ...(s.cash > 0 ? [{ label: "현금", value: s.cash }] : [])].sort((a, b) => b.value - a.value)} />
-        </div>
-        <div>
-          <p className="mb-2 text-xs font-semibold text-ink-2">ETF 유형·자산 분류별</p>
-          <WeightBars items={[...byType.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)} />
-        </div>
-      </div>
-      <div className="mt-4 overflow-x-auto">
-        <table className="table-basic">
-          <thead>
-            <tr>
-              <th>종목</th>
-              <th className="r">수량</th>
-              <th className="r">평균 단가</th>
-              <th className="r">현재가</th>
-              <th className="r">평가금액</th>
-              <th className="r">미실현 손익</th>
-              {s.mode === "ledger" && <th className="r">실현 손익</th>}
-              {s.mode === "ledger" && <th className="r">받은 분배금(세전)</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {s.holdings.map((h) => (
-              <tr key={h.symbol}>
-                <td>
-                  <Link href={`/stock/${h.symbol}`} className="font-semibold hover:text-accent">
-                    {h.symbol}
+    <div className="flex flex-col gap-5">
+      <Section title="종목별 수익률" description={`${basis === "usd" ? "달러 기준" : "원화 기준 (환율 반영)"} · 총손익 = 평가손익 + 실현손익 + 받은 분배금(세후) · 총수익률 = 총손익 ÷ 총 매수 금액`}>
+        {/* 휴대폰: 종목마다 핵심 숫자만 카드로 */}
+        <ul className="flex flex-col divide-y divide-line sm:hidden">
+          {r.holdings.map((h) => {
+            const f = pick(h, basis);
+            return (
+              <li key={h.symbol} className="py-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <Link href={`/stock/${h.symbol}`} className="font-semibold">
+                    {h.symbol} <span className="text-[11px] font-normal text-muted">{h.shares.toLocaleString("en-US", { maximumFractionDigits: 4 })}주</span>
                   </Link>
-                  <span className="ml-1 text-[11px] text-muted">{getInstrument(h.symbol)?.nameKo}</span>
-                </td>
-                <td className="r">{h.shares.toLocaleString("en-US", { maximumFractionDigits: 4 })}</td>
-                <td className="r">{usd(h.avgCost)}</td>
-                <td className="r">{usd(h.price)}</td>
-                <td className="r">{usd(h.value)}</td>
-                <td className={`r ${tone(h.unrealized)}`}>
-                  {signedUsd(h.unrealized)}
-                  <span className="block text-[11px]">{pct(h.unrealizedPct)}</span>
-                </td>
-                {s.mode === "ledger" && <td className={`r ${tone(h.realized)}`}>{signedUsd(h.realized)}</td>}
-                {s.mode === "ledger" && <td className="r">{usd(h.dividends)}</td>}
+                  <span className="num text-sm">{f ? money(f.value, basis) : "-"}</span>
+                </div>
+                {f ? (
+                  <dl className="mt-1.5 grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <dt className="text-muted">평가 수익률</dt>
+                      <dd className={`num font-semibold ${tone(f.unrealizedPct)}`}>{pct(f.unrealizedPct)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">총수익률</dt>
+                      <dd className={`num font-semibold ${tone(f.totalReturnPct)}`}>{pct(f.totalReturnPct)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted">{basis === "krw" ? "환율 효과" : ledger ? "받은 분배금" : "분배금 (추정)"}</dt>
+                      <dd className={`num ${basis === "krw" ? tone(f.fxEffect) : ""}`}>{basis === "krw" ? signed(f.fxEffect, basis) : f.dividends !== null ? money(f.dividends, basis) : "-"}</dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="mt-1 text-xs text-muted">매수 환율을 알 수 없어 원화 기준으로 계산하지 않았습니다</p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="hidden overflow-x-auto sm:block">
+          <table className="table-basic">
+            <thead>
+              <tr>
+                <th>종목</th>
+                <th className="r">수량</th>
+                <th className="r">평균 단가</th>
+                <th className="r">현재가</th>
+                {basis === "krw" && <th className="r">매수 환율</th>}
+                <th className="r">평가금액</th>
+                <th className="r">평가손익 (수익률)</th>
+                <th className="r">{ledger ? "받은 분배금" : "분배금 (추정)"}</th>
+                <th className="r">총손익 (총수익률)</th>
+                {basis === "krw" && <th className="r">환율 효과</th>}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Section>
+            </thead>
+            <tbody>
+              {r.holdings.map((h) => {
+                const f = pick(h, basis);
+                return (
+                  <tr key={h.symbol}>
+                    <td>
+                      <Link href={`/stock/${h.symbol}`} className="font-semibold hover:text-accent">
+                        {h.symbol}
+                      </Link>
+                      <span className="ml-1 text-[11px] text-muted">{getInstrument(h.symbol)?.nameKo}</span>
+                    </td>
+                    <td className="r">{h.shares.toLocaleString("en-US", { maximumFractionDigits: 4 })}</td>
+                    <td className="r">{usd(h.avgCost)}</td>
+                    <td className="r">{usd(h.price)}</td>
+                    {basis === "krw" && <td className="r">{h.krw?.cost && h.usd.cost ? `₩${(h.krw.cost / h.usd.cost).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}` : "-"}</td>}
+                    {f ? (
+                      <>
+                        <td className="r">{money(f.value, basis)}</td>
+                        <td className={`r ${tone(f.unrealized)}`}>
+                          {signed(f.unrealized, basis)}
+                          <span className="block text-[11px]">{pct(f.unrealizedPct)}</span>
+                        </td>
+                        <td className="r">{f.dividends !== null ? money(f.dividends, basis) : "-"}</td>
+                        <td className={`r font-semibold ${tone(f.totalGain)}`}>
+                          {signed(f.totalGain, basis)}
+                          <span className="block text-[11px]">{pct(f.totalReturnPct)}</span>
+                        </td>
+                        {basis === "krw" && <td className={`r ${tone(f.fxEffect)}`}>{signed(f.fxEffect, basis)}</td>}
+                      </>
+                    ) : (
+                      <td className="text-xs text-muted" colSpan={basis === "krw" ? 5 : 4}>
+                        매수 환율을 알 수 없어 원화 기준으로 계산하지 않았습니다
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {ledger && <p className="mt-2 text-[11px] text-muted">모두 매도한 종목의 실현손익·분배금은 위 &lsquo;총수익률&rsquo;(계좌 전체)에 들어 있습니다.</p>}
+      </Section>
+      {s.missingPrices.length ? (
+        <Notice tone="warn">{s.missingPrices.join(", ")} 시세가 없어 비중을 계산하지 않았습니다.</Notice>
+      ) : (
+        <Section title="비중">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div>
+              <p className="mb-2 text-xs font-semibold text-ink-2">종목별 (현금 포함)</p>
+              <WeightBars items={[...s.holdings.map((h) => ({ label: h.symbol, value: h.value ?? 0 })), ...(s.cash > 0 ? [{ label: "현금", value: s.cash }] : [])].sort((a, b) => b.value - a.value)} />
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold text-ink-2">ETF 유형·자산 분류별</p>
+              <WeightBars items={[...byType.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)} />
+            </div>
+          </div>
+        </Section>
+      )}
+    </div>
   );
 }
 
@@ -284,45 +423,9 @@ function HistorySection({ p, s }: { p: PortfolioData; s: PortfolioSummary }) {
   );
 }
 
-// ─────────────────────────────── 원화 환산 ───────────────────────────────
-
-function KrwSection({ s, p, fx }: { s: PortfolioSummary; p: PortfolioData; fx: ReturnType<typeof useFx> }) {
-  const [prefs] = usePrefs();
-  const costKrw = s.holdings.every((h) => h.costKrw !== null) ? s.holdings.reduce((a, h) => a + (h.costKrw as number), 0) : null;
-  return (
-    <Section
-      title="원화(KRW) 환산"
-      right={
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={prefs.showKrw} onChange={(e) => setPrefs({ showKrw: e.target.checked })} className="h-4 w-4" />
-          모든 금액 옆에 원화 표시
-        </label>
-      }
-      description="현재 환율과 거래 당시 환율을 구분해 계산"
-    >
-      {fx.error || !fx.rate ? (
-        <Notice tone="warn">{fx.error ?? "환율을 불러오는 중입니다"} — 원화 환산을 하지 않습니다.</Notice>
-      ) : s.empty ? (
-        <p className="text-sm text-muted">자산을 입력하면 원화 환산을 계산합니다. 현재 환율 ₩{fx.rate.toLocaleString("ko-KR", { maximumFractionDigits: 2 })} ({fx.time ? formatEt(fx.time) : "-"}, {fx.source})</p>
-      ) : (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <KV label="현재 환율" value={`₩${fx.rate.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}`} sub={`${fx.time ? formatEt(fx.time) : "-"} · ${fx.source}`} />
-          <KV label="총자산 (현재 환율)" value={s.missingPrices.length ? "-" : krw(s.totalAssets * fx.rate)} />
-          <KV label="매수 원가 (매수 당시 환율)" value={costKrw !== null ? krw(costKrw) : "환율 미입력"} sub={costKrw === null ? `매수 기록에 환율을 넣으면 계산합니다 (${p.mode === "simple" ? "평균 매수 환율" : "거래별 환율"})` : "입력한 거래 당시 환율 기준"} />
-          <KV
-            label="원화 기준 평가손익"
-            value={costKrw !== null && !s.missingPrices.length ? krw(s.marketValue * fx.rate - costKrw) : "-"}
-            sub={costKrw !== null && !s.missingPrices.length ? `이 중 환율 효과 ${krw(s.marketValue * fx.rate - costKrw - s.unrealized * fx.rate)}` : "현재 환율로만 보면 " + (s.missingPrices.length ? "-" : krw(s.unrealized * fx.rate))}
-          />
-        </div>
-      )}
-    </Section>
-  );
-}
-
 // ─────────────────────────────── 입력 ───────────────────────────────
 
-function InputSection({ p, save, s }: { p: PortfolioData; save: (fn: (cur: PortfolioData) => PortfolioData) => Promise<void>; s: PortfolioSummary }) {
+function InputSection({ p, save, s, v }: { p: PortfolioData; save: (fn: (cur: PortfolioData) => PortfolioData) => Promise<void>; s: PortfolioSummary; v: View }) {
   const convert = () => {
     const holdings = p.simple.holdings.filter((h) => h.shares > 0);
     const msg = `간편 입력을 거래 내역으로 전환합니다.\n\n- 보유 종목 ${holdings.length}개 → '기초 보유' 기록 (현금 이동 없음)\n- 현금 ${usd(p.simple.cash)} → '입금' 기록\n\n전환 후에는 거래 내역만 계산에 쓰므로 수량·원가가 두 번 계산되지 않습니다. 계속할까요?`;
@@ -349,12 +452,18 @@ function InputSection({ p, save, s }: { p: PortfolioData; save: (fn: (cur: Portf
         )
       }
     >
-      {p.mode === "simple" ? <SimpleEditor p={p} save={save} /> : <LedgerEditor p={p} save={save} s={s} />}
+      {p.mode === "simple" ? <SimpleEditor p={p} save={save} v={v} /> : <LedgerEditor p={p} save={save} s={s} />}
     </Section>
   );
 }
 
-function SimpleEditor({ p, save }: { p: PortfolioData; save: (fn: (cur: PortfolioData) => PortfolioData) => Promise<void> }) {
+/** 입력 목록 옆에 바로 보여 주는 종목 수익률 (선택한 기준) */
+function rowReturn(v: View, symbol: string): number | null {
+  const h = v.r.holdings.find((x) => x.symbol === symbol);
+  return h ? (pick(h, v.basis)?.totalReturnPct ?? null) : null;
+}
+
+function SimpleEditor({ p, save, v }: { p: PortfolioData; save: (fn: (cur: PortfolioData) => PortfolioData) => Promise<void>; v: View }) {
   const blank = { symbol: "", shares: "", avgCost: "", firstDate: "", avgFx: "", memo: "" };
   const [f, setF] = useState(blank);
   const [editing, setEditing] = useState<string | null>(null);
@@ -433,6 +542,7 @@ function SimpleEditor({ p, save }: { p: PortfolioData; save: (fn: (cur: Portfoli
                 <th className="r">평균 단가</th>
                 <th>최초 매수일</th>
                 <th className="r">평균 환율</th>
+                <th className="r">수익률 ({v.basis === "usd" ? "달러" : "원화"})</th>
                 <th>메모</th>
                 <th />
               </tr>
@@ -445,6 +555,7 @@ function SimpleEditor({ p, save }: { p: PortfolioData; save: (fn: (cur: Portfoli
                   <td className="r">{usd(h.avgCost)}</td>
                   <td className="num">{h.firstDate ?? "-"}</td>
                   <td className="r">{h.avgFx ? h.avgFx.toLocaleString("ko-KR") : "-"}</td>
+                  <td className={`r ${tone(rowReturn(v, h.symbol))}`}>{pct(rowReturn(v, h.symbol))}</td>
                   <td className="max-w-[14rem] truncate text-xs text-ink-2">{h.memo}</td>
                   <td className="whitespace-nowrap text-right">
                     <button type="button" className="btn btn-sm" onClick={() => (setEditing(h.id), setF({ symbol: h.symbol, shares: String(h.shares), avgCost: String(h.avgCost), firstDate: h.firstDate ?? "", avgFx: h.avgFx ? String(h.avgFx) : "", memo: h.memo ?? "" }))}>
