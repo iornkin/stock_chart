@@ -1,0 +1,240 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ── 색상 토큰 (라이트) ── */
+:root {
+  color-scheme: light;
+  --bg: #f4f4f1;
+  --surface: #fcfcfb;
+  --surface-2: #f1f0ec;
+  --surface-3: #e8e7e2;
+  --border: rgba(11, 11, 11, 0.1);
+  --border-strong: rgba(11, 11, 11, 0.18);
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --muted: #6f6e69;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --accent: #2a78d6;
+  --accent-soft: #e3eefb;
+  /* 한국식 기본: 상승 빨강 / 하락 파랑 */
+  --up: #d03b3b;
+  --down: #2a6fd0;
+  --up-soft: rgba(208, 59, 59, 0.1);
+  --down-soft: rgba(42, 111, 208, 0.1);
+  --good: #0a7d0a;
+  --warn: #9a6400;
+  --warn-soft: #fdf3dc;
+  --critical: #c03030;
+  --critical-soft: #fbe7e7;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #eda100;
+  --s5: #e87ba4;
+  --s6: #008300;
+  --s7: #6250d6;
+  --s8: #e34948;
+}
+
+[data-colors="us"] {
+  --up: #0a8a3a;
+  --down: #d03b3b;
+  --up-soft: rgba(10, 138, 58, 0.1);
+  --down-soft: rgba(208, 59, 59, 0.1);
+}
+
+/* ── 다크 (OS 설정) ── */
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #222220;
+    --surface-3: #2c2c2a;
+    --border: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.18);
+    --text: #f0efec;
+    --text-2: #c3c2b7;
+    --muted: #9a998f;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --accent: #5598e7;
+    --accent-soft: rgba(57, 135, 229, 0.16);
+    --up: #ef5a5a;
+    --down: #4f8fe6;
+    --up-soft: rgba(239, 90, 90, 0.14);
+    --down-soft: rgba(79, 143, 230, 0.14);
+    --good: #2fbf2f;
+    --warn: #f0b429;
+    --warn-soft: rgba(240, 180, 41, 0.12);
+    --critical: #f06a6a;
+    --critical-soft: rgba(240, 106, 106, 0.12);
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #c98500;
+    --s5: #d55181;
+    --s6: #008300;
+    --s7: #9085e9;
+    --s8: #e66767;
+  }
+  :root:where(:not([data-theme="light"]))[data-colors="us"] {
+    --up: #2fbf5f;
+    --down: #ef5a5a;
+    --up-soft: rgba(47, 191, 95, 0.14);
+    --down-soft: rgba(239, 90, 90, 0.14);
+  }
+}
+
+/* ── 다크 (사용자 선택) ── */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #222220;
+  --surface-3: #2c2c2a;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --muted: #9a998f;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --accent: #5598e7;
+  --accent-soft: rgba(57, 135, 229, 0.16);
+  --up: #ef5a5a;
+  --down: #4f8fe6;
+  --up-soft: rgba(239, 90, 90, 0.14);
+  --down-soft: rgba(79, 143, 230, 0.14);
+  --good: #2fbf2f;
+  --warn: #f0b429;
+  --warn-soft: rgba(240, 180, 41, 0.12);
+  --critical: #f06a6a;
+  --critical-soft: rgba(240, 106, 106, 0.12);
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #c98500;
+  --s5: #d55181;
+  --s6: #008300;
+  --s7: #9085e9;
+  --s8: #e66767;
+}
+:root[data-theme="dark"][data-colors="us"] {
+  --up: #2fbf5f;
+  --down: #ef5a5a;
+  --up-soft: rgba(47, 191, 95, 0.14);
+  --down-soft: rgba(239, 90, 90, 0.14);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-ink-2: var(--text-2);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-up-soft: var(--up-soft);
+  --color-down-soft: var(--down-soft);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-critical: var(--critical);
+  --color-critical-soft: var(--critical-soft);
+  --font-sans: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+a.link {
+  color: var(--accent);
+}
+a.link:hover {
+  text-decoration: underline;
+}
+
+/* 표 */
+.table-basic {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.table-basic th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--border-strong);
+  padding: 0.5rem 0.625rem;
+  white-space: nowrap;
+}
+.table-basic td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0.625rem;
+  vertical-align: top;
+}
+.table-basic td.r,
+.table-basic th.r {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 37%, var(--surface-2) 63%);
+  background-size: 400% 100%;
+  animation: skeleton 1.4s ease infinite;
+  border-radius: 6px;
+}
+@keyframes skeleton {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  .card {
+    border: 1px solid CanvasText;
+  }
+}

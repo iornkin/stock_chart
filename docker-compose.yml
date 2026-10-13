@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_PATH: /app/data/app.db
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
