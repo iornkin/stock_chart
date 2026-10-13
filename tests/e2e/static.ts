@@ -9,6 +9,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { chromium, type Page } from "@playwright/test";
+import { featureChecks } from "./features";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const OUT = path.join(ROOT, "out");
@@ -211,6 +212,10 @@ async function main() {
     check("데이터 요청 실패 없음", unexpected.length === 0, unexpected.slice(0, 3).join(" | "));
     const realErrors = errors.filter((e) => !e.includes("404"));
     check("브라우저 콘솔 오류 없음", realErrors.length === 0, realErrors.slice(0, 3).join(" | "));
+    const quotesJson = JSON.parse(fs.readFileSync(path.join(OUT, "data", "quotes.json"), "utf8")) as { quotes: { symbol: string; price: number }[] };
+    await featureChecks(browser, BASE, SHOTS, check, async (s) => quotesJson.quotes.find((q) => q.symbol === s)?.price ?? NaN, "정적");
+    check("정적: 시계열 파일 (지수·환율 포함)", ["QQQ", "_GSPC", "KRW_X", "_IRX"].every((k) => fs.existsSync(path.join(OUT, "data", "series", `${k}.json`))));
+    check("정적: 배당 요약 파일", fs.existsSync(path.join(OUT, "data", "income.json")));
   } finally {
     await browser.close();
     server.close();

@@ -23,7 +23,8 @@ import AutoRefresh from "@/components/AutoRefresh";
 import { Change, Empty, Notice, Section, Stat } from "@/components/ui";
 import { readDividends } from "@/lib/data/dividends";
 import { summarizeDividends } from "@/lib/dividend-analytics";
-import { etfProfile, stockFundamentals } from "@/lib/data/profile";
+import { etfProfile, readFilings, stockFundamentals } from "@/lib/data/profile";
+import KrwHint from "@/components/KrwHint";
 import { lastFailure, lastSuccessAt } from "@/lib/jobs/runner";
 import { perRequest, readSearchParams } from "@/lib/page-mode";
 import { IS_STATIC } from "@/lib/static-mode";
@@ -66,13 +67,14 @@ export default async function StockPage({ params, searchParams }: Props) {
   const delay = q ? delayLabel(q) : null;
   const word = isEtf ? "분배금" : "배당금";
   const quotesFail = lastFailure("refresh_quotes");
+  const filings = !isEtf ? readFilings(symbol) : null;
 
   const tabs = [
     { key: "overview", label: "개요" },
     { key: "briefing", label: "일일 브리핑" },
     { key: "fundamentals", label: isEtf ? "ETF 정보" : "재무 정보" },
     { key: "dividends", label: `배당·분배금` },
-    { key: "news", label: "뉴스" },
+    { key: "news", label: "뉴스·공시" },
     { key: "compare", label: "종목 비교" },
   ];
 
@@ -179,6 +181,7 @@ export default async function StockPage({ params, searchParams }: Props) {
               <span className="num text-3xl font-bold">{fmtUsd(q.price)}</span>
               <Change value={q.change} pct={q.changePct} className="ml-2 text-lg" />
               <span className="ml-2 text-xs text-muted">USD</span>
+              <KrwHint usd={q.price} />
             </div>
             {q.prePrice !== null && st.phase === "pre" && (
               <span className="text-sm text-ink-2">
@@ -249,6 +252,39 @@ export default async function StockPage({ params, searchParams }: Props) {
               <Section title="이전 뉴스 (14일 이내)" description="게시 날짜를 확인하세요 — 오늘의 뉴스가 아닙니다">
                 <NewsList items={olderNews} showReason empty="이전 뉴스가 없습니다." />
               </Section>
+              {!isEtf ? (
+                <Section title="관련 공시 (SEC EDGAR)" description={filings ? `연차·분기 보고서, 수시 공시(8-K), 주주총회 위임장 · 수집 ${formatEt(filings.fetchedAt)}` : undefined}>
+                  {filings && filings.items.length ? (
+                    <ul className="flex flex-col divide-y divide-line text-sm">
+                      {filings.items.map((f) => (
+                        <li key={f.url} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2">
+                          <span className="num w-24 shrink-0 text-xs text-muted">{f.filingDate}</span>
+                          <span className="rounded bg-surface-2 px-1.5 py-0.5 text-xs font-semibold">{f.form}</span>
+                          <a href={f.url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 link">
+                            {f.description ?? f.form}
+                            {f.reportDate ? ` (보고 기준일 ${f.reportDate})` : ""} ↗
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <Empty>아직 수집된 공시 목록이 없습니다. 참조 데이터 수집 작업이 하루 한 번 SEC EDGAR 에서 가져옵니다(SEC_USER_AGENT 설정 필요).</Empty>
+                  )}
+                </Section>
+              ) : (
+                <Section title="관련 공시">
+                  <p className="text-sm text-ink-2">
+                    ETF 의 보유 내역·분배금 구성(19a-1)·투자설명서는 운용사가 공시합니다.{" "}
+                    {inst.officialUrl ? (
+                      <a href={inst.officialUrl} target="_blank" rel="noopener noreferrer" className="link">
+                        운용사 공식 페이지 ↗
+                      </a>
+                    ) : (
+                      "운용사 공식 페이지를 확인하세요."
+                    )}
+                  </p>
+                </Section>
+              )}
             </div>
           ),
           compare: <CompareClient initial={[symbol, ...(inst.peers ?? []).slice(0, 2)]} showPresets={false} />,

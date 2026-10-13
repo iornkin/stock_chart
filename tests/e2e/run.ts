@@ -15,6 +15,8 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { chromium, type Page } from "@playwright/test";
 import { marketStatus } from "@/lib/market-calendar";
+import { INSTRUMENTS } from "@/config/instruments";
+import { featureChecks } from "./features";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const OUT = process.env.E2E_OUT ?? fs.mkdtempSync(path.join(os.tmpdir(), "usi-e2e-"));
@@ -127,7 +129,7 @@ async function main() {
       const runs = d.prepare("SELECT job, status, message FROM job_runs ORDER BY id").all() as { job: string; status: string; message: string }[];
       for (const r of runs) check(`job_runs 기록: ${r.job}`, r.status === "success", `${r.status} · ${r.message}`);
       const nBrief = (d.prepare("SELECT count(*) AS n FROM briefings WHERE session='close'").get() as { n: number }).n;
-      check("장 마감 후 브리핑 생성 (지원 종목 47 + 시장 1)", nBrief === 48, `${nBrief}건`);
+      check(`장 마감 후 브리핑 생성 (지원 종목 ${INSTRUMENTS.length} + 시장 1)`, nBrief === INSTRUMENTS.length + 1, `${nBrief}건`);
       const divs = d.prepare("SELECT ex_date, amount, amount_raw, pay_date, sources FROM dividends WHERE symbol='JEPI' ORDER BY ex_date DESC LIMIT 3").all() as { pay_date: string | null; sources: string }[];
       check("JEPI 분배금: 지급일 포함 (Nasdaq 병합)", divs.length > 0 && divs.every((x) => x.pay_date), JSON.stringify(divs[0]));
       const schd = d.prepare("SELECT ex_date, amount, amount_raw, split_adjusted FROM dividends WHERE symbol='SCHD' AND ex_date < '2024-10-11' ORDER BY ex_date DESC LIMIT 1").get() as { amount: number; amount_raw: number; split_adjusted: number } | undefined;
@@ -343,6 +345,17 @@ async function main() {
     await m.goto(`${BASE}/`, { waitUntil: "networkidle" });
     await m.getByRole("button", { name: "메뉴 열기" }).click();
     check("모바일 메뉴", await m.getByRole("link", { name: "배당·분배금 캘린더" }).isVisible());
+
+    // 개인 자산·가상 투자·백테스트·시뮬레이터·스트레스 테스트·전략·백업
+    await featureChecks(browser, BASE, OUT, check, async (s) => {
+      const j = await (await fetch(`${BASE}/api/quotes?symbols=${encodeURIComponent(s)}`)).json();
+      return j.quotes[0].price as number;
+    });
+    const series = await (await fetch(`${BASE}/api/series/QQQ`)).json();
+    check("시계열 API: 일봉 종가·분배금 (백테스트용)", series.symbol === "QQQ" && series.close.length > 1000 && series.divs.length > 10);
+    check("시계열 API: 미지원 종목 404", (await fetch(`${BASE}/api/series/AMD`)).status === 404);
+    const income = await (await fetch(`${BASE}/api/income`)).json();
+    check("배당 요약 API: 분배금/배당금 구분·최근 12개월", income.items.JEPI.word === "분배금" && income.items.AAPL.word === "배당금" && income.items.JEPI.ttmPerShare > 0);
 
     // ── 4) 장애 상황 ──
     killTree(mock);

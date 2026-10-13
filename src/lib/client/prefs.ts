@@ -30,6 +30,8 @@ export interface Prefs {
   watchlist: string[];
   autoRefreshSec: number;
   defaultRange: string;
+  /** 금액 옆에 원화 환산(현재 환율)을 함께 표시 */
+  showKrw: boolean;
   chart: ChartPrefs;
 }
 
@@ -39,6 +41,7 @@ export const DEFAULT_PREFS: Prefs = {
   watchlist: ["QQQ", "JEPI", "NVDA"],
   autoRefreshSec: 300,
   defaultRange: "1Y",
+  showKrw: false,
   chart: {
     type: "candle",
     smaPeriods: [20, 50, 200],

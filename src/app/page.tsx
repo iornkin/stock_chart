@@ -16,6 +16,7 @@ import { changeClass, fmtDividend, fmtPct, fmtPrice } from "@/lib/format";
 import { dataHealth, sparkCloses } from "@/lib/views";
 import QuoteCard from "@/components/QuoteCard";
 import { Change, Empty, Notice, PctBadge, Section } from "@/components/ui";
+import MyDashboard from "@/components/MyDashboard";
 import WatchlistPanel from "@/components/WatchlistPanel";
 import AutoRefresh from "@/components/AutoRefresh";
 import NewsList from "@/components/NewsList";
@@ -171,7 +172,7 @@ export default async function Dashboard() {
           <MarketIndexCard key={m.symbol} symbol={m.symbol} name={m.nameKo} q={quotes.get(m.symbol)} note={m.note} />
         ))}
       </section>
-      <section aria-label="금리·달러·금·변동성" className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+      <section aria-label="금리·환율·금·변동성" className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
         {MARKET_SYMBOLS.filter((m) => !m.headline).map((m) => {
           const q = quotes.get(m.symbol);
           if (!q || q.price === null) return null;
@@ -179,13 +180,15 @@ export default async function Dashboard() {
             <div key={m.symbol} className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2" title={m.note}>
               <div className="truncate text-[11px] text-muted">{m.nameKo}</div>
               <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-                <span className="num text-sm font-semibold">{fmtPrice(q.price, m.unit === "%" ? 3 : 2)}{m.unit === "%" ? "%" : ""}</span>
+                <span className="num text-sm font-semibold">{fmtPrice(q.price, m.unit === "%" ? 3 : 2)}{m.unit === "%" ? "%" : m.unit === "krw" ? "원" : ""}</span>
                 <span className={`num text-xs font-semibold ${changeClass(q.changePct)}`}>{fmtPct(q.changePct)}</span>
               </div>
             </div>
           );
         })}
       </section>
+
+      <MyDashboard />
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
         <Section title="오늘 확인할 것" description="수집된 데이터와 브리핑에서 자동으로 고른 항목입니다. 누르면 자세한 내용으로 이동합니다.">
