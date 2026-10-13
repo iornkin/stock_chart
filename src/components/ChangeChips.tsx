@@ -4,7 +4,8 @@ import type { BriefingDigest } from "@/lib/briefing/digest";
 const tone = (d: "up" | "down" | "neutral") => (d === "up" ? "bg-up-soft text-up" : d === "down" ? "bg-down-soft text-down" : "bg-surface-3 text-ink-2");
 
 export default function ChangeChips({ d, max = 3, showStance = true, minImportance = 1 }: { d: BriefingDigest; max?: number; showStance?: boolean; minImportance?: number }) {
-  const items = d.changes.filter((c) => c.importance >= minImportance).slice(0, max);
+  // 기사 수('새 관련 기사 N건')는 칩에서 빼고 가격·지표·배당 변화만 보여 준다
+  const items = d.changes.filter((c) => c.importance >= minImportance && c.tag !== "news").slice(0, max);
   const stanceTone = d.score === null ? "neutral" : d.score > 0 ? "up" : d.score < 0 ? "down" : "neutral";
   return (
     <span className="flex flex-wrap items-center gap-1">

@@ -20,7 +20,7 @@ export default function MarketClock() {
     <span className="inline-flex items-center gap-2 text-xs text-ink-2" title={`다음 정규장: ${st.nextSessionDate}`}>
       <span className={`inline-block h-2 w-2 rounded-full ${color}`} aria-hidden />
       <span className="font-medium text-ink">{st.label}</span>
-      <span className="num">
+      <span className="num hidden sm:inline">
         {p.month}/{p.day} {pad2(p.hour)}:{pad2(p.minute)} ET
       </span>
     </span>

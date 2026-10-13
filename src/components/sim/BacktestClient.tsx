@@ -8,7 +8,9 @@ import { Notice, Section } from "@/components/ui";
 import { Disclaimer, Field, krw, parseNum, pct, rowsFrom, rowsToItems, rowsProblem, Seg, SymbolSelect, tone, usd } from "./common";
 import { GroupedBars, ReturnHeatmap, SimLineChart, SERIES_VARS } from "./charts";
 import PortfolioInputs, { defaultPortfolios, LETTERS, type PortfolioInput } from "./PortfolioInputs";
+import type { CostMethod } from "@/lib/portfolio/tax";
 import BarChartSvg from "@/components/BarChartSvg";
+import PanelTabs from "@/components/PanelTabs";
 import type { PriceSeries } from "@/lib/sim/series";
 
 const QUICK: { label: string; months?: number; all?: boolean }[] = [
@@ -55,6 +57,10 @@ export default function BacktestClient() {
   const [bench, setBench] = useState("QQQ");
   const [normalize, setNormalize] = useState(false);
   const [showKrw, setShowKrw] = useState(false);
+  const [cgOn, setCgOn] = useState(false);
+  const [cgMethod, setCgMethod] = useState<CostMethod>("fifo");
+  const [fxMode, setFxMode] = useState<"historical" | "fixed">("historical");
+  const [fixedFx, setFixedFx] = useState("1400");
   const [out, setOut] = useState<RunOutput | null>(null);
   const [err, setErr] = useState<string[] | null>(null);
   const runs = useRuns();
@@ -122,7 +128,10 @@ export default function BacktestClient() {
       rfPct = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
       notes.push(vals.length ? `샤프 비율의 무위험 수익률: 미국 13주 국채금리(^IRX) 기간 평균 ${rfPct.toFixed(2)}%` : "무위험 수익률 데이터가 없어 0%로 계산했습니다.");
     }
-    const base = { start, end, initial: ini, monthly: mon, timing, reinvest, rebalance, costPct: c, taxPct: t, riskFreePct: rfPct };
+    const fixed = parseNum(fixedFx);
+    if (cgOn && fxMode === "fixed" && !(fixed > 0)) return setErr(["양도소득세 계산용 고정 환율을 입력하세요."]);
+    const capitalGains = cgOn ? { method: cgMethod, fx: ser.series["KRW=X"] ?? null, fixedFx: fxMode === "fixed" ? fixed : null } : null;
+    const base = { start, end, initial: ini, monthly: mon, timing, reinvest, rebalance, costPct: c, taxPct: t, riskFreePct: rfPct, capitalGains };
     const items = ready.map(({ p, holdings }) => ({ p, suite: runBacktestSuite({ ...base, holdings }, ser.series) }));
     const failed = items.filter((x) => !x.suite.main.ok);
     if (failed.length) {
@@ -151,7 +160,7 @@ export default function BacktestClient() {
 
   return (
     <div className="flex flex-col gap-5">
-      <Section title="1. 포트폴리오" description="티커와 비중을 직접 바꿀 수 있습니다. 비교할 포트폴리오는 모두 같은 기간·조건으로 계산합니다.">
+      <Section title="1. 포트폴리오" description="최대 4개를 같은 기간·조건으로 비교합니다">
         <PortfolioInputs list={list} onChange={setList} />
         <label className="mt-3 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={normalize} onChange={(e) => setNormalize(e.target.checked)} className="h-4 w-4" />
@@ -159,7 +168,7 @@ export default function BacktestClient() {
         </label>
       </Section>
 
-      <Section title="2. 기간" description="시작일과 종료일을 직접 입력하세요. 빠른 선택 버튼은 날짜 입력칸을 채워 주는 편의 기능이며, 입력칸의 날짜로 계산합니다.">
+      <Section title="2. 기간" description="입력칸의 날짜로 계산합니다 (빠른 선택은 날짜를 채워 주는 기능)">
         <div className="flex flex-wrap items-end gap-3">
           <Field label="시작일">
             <input type="date" className="input" value={start} max={end} onChange={(e) => setStart(e.target.value)} aria-label="시작일" />
@@ -179,15 +188,18 @@ export default function BacktestClient() {
       </Section>
 
       <Section title="3. 투자 조건">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="초기 투자금 (USD)">
             <input className="input" inputMode="decimal" value={initial} onChange={(e) => setInitial(e.target.value)} aria-label="초기 투자금" />
           </Field>
           <Field label="매월 추가 투자금 (USD)">
             <input className="input" inputMode="decimal" value={monthly} onChange={(e) => setMonthly(e.target.value)} aria-label="매월 추가 투자금" />
           </Field>
+          <Field label="벤치마크 (같은 조건으로 비교)">
+            <SymbolSelect value={bench} onChange={setBench} label="벤치마크" includeNone="비교 안 함" />
+          </Field>
           <Field label="추가 투자 시점">
-            <Seg label="추가 투자 시점" value={timing} onChange={setTiming} options={[{ v: "month_start", l: "월초 첫 거래일" }, { v: "month_end", l: "월말 마지막 거래일" }]} />
+            <Seg label="추가 투자 시점" value={timing} onChange={setTiming} options={[{ v: "month_start", l: "월초" }, { v: "month_end", l: "월말" }]} />
           </Field>
           <Field label="분배금">
             <Seg label="분배금 재투자" value={reinvest} onChange={setReinvest} options={[{ v: true, l: "재투자" }, { v: false, l: "현금 보유" }]} />
@@ -201,29 +213,55 @@ export default function BacktestClient() {
               ))}
             </select>
           </Field>
-          <Field label="거래 비용 (%)" hint="사고판 금액 기준">
-            <input className="input" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} aria-label="거래 비용" />
-          </Field>
-          <Field label="분배금 세금 (%)" hint="미국 원천징수 15% 가정. 양도세는 반영하지 않음">
-            <input className="input" inputMode="decimal" value={tax} onChange={(e) => setTax(e.target.value)} aria-label="분배금 세금" />
-          </Field>
-          <Field label="샤프 비율 무위험 수익률">
-            <div className="flex gap-1">
-              <select className="input" value={rfMode} onChange={(e) => setRfMode(e.target.value as "auto" | "manual")} aria-label="무위험 수익률 방식">
-                <option value="auto">국채금리 기간 평균</option>
-                <option value="manual">직접 입력(%)</option>
-              </select>
-              {rfMode === "manual" && <input className="input w-20" inputMode="decimal" value={rf} onChange={(e) => setRf(e.target.value)} aria-label="무위험 수익률" />}
-            </div>
-          </Field>
-          <Field label="벤치마크 (같은 조건으로 비교)">
-            <SymbolSelect value={bench} onChange={setBench} label="벤치마크" includeNone="비교 안 함" />
-          </Field>
-          <label className="flex items-center gap-2 self-end pb-2 text-sm">
-            <input type="checkbox" checked={showKrw} onChange={(e) => setShowKrw(e.target.checked)} className="h-4 w-4" />
-            원화(KRW) 환산도 보기
-          </label>
         </div>
+        <details className="mt-4 rounded-lg border border-line px-4 py-3" open={cgOn || showKrw}>
+          <summary className="text-sm font-semibold text-ink-2">
+            세금·비용·고급 설정 <span className="ml-1 text-xs font-normal text-muted">거래 비용 {cost}% · 분배금 세금 {tax}% · 양도세 {cgOn ? "반영" : "미반영"}</span>
+          </summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="거래 비용 (%)" hint="사고판 금액 기준">
+              <input className="input" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} aria-label="거래 비용" />
+            </Field>
+            <Field label="분배금 세금 (%)" hint="미국 원천징수 15% 가정">
+              <input className="input" inputMode="decimal" value={tax} onChange={(e) => setTax(e.target.value)} aria-label="분배금 세금" />
+            </Field>
+            <Field label="샤프 비율 무위험 수익률">
+              <div className="flex gap-1">
+                <select className="input" value={rfMode} onChange={(e) => setRfMode(e.target.value as "auto" | "manual")} aria-label="무위험 수익률 방식">
+                  <option value="auto">국채금리 기간 평균</option>
+                  <option value="manual">직접 입력(%)</option>
+                </select>
+                {rfMode === "manual" && <input className="input w-20" inputMode="decimal" value={rf} onChange={(e) => setRf(e.target.value)} aria-label="무위험 수익률" />}
+              </div>
+            </Field>
+          </div>
+          <div className="mt-4 flex flex-col gap-2 border-t border-line pt-3">
+            <label className="flex items-center gap-2 text-sm font-semibold">
+              <input type="checkbox" checked={cgOn} onChange={(e) => setCgOn(e.target.checked)} className="h-4 w-4" />
+              해외주식 양도소득세 반영 <span className="font-normal text-muted">(연 250만 원 공제 · 22% · 다음 해 5월 납부)</span>
+            </label>
+            {cgOn && (
+              <div className="flex flex-wrap items-end gap-3 pl-6">
+                <Field label="취득가액 계산">
+                  <Seg label="취득가액 계산" value={cgMethod} onChange={setCgMethod} options={[{ v: "fifo", l: "선입선출" }, { v: "average", l: "이동평균" }]} />
+                </Field>
+                <Field label="원화 환산 환율">
+                  <Seg label="원화 환산 환율" value={fxMode} onChange={setFxMode} options={[{ v: "historical", l: "날짜별 실제 환율" }, { v: "fixed", l: "고정 환율" }]} />
+                </Field>
+                {fxMode === "fixed" && (
+                  <Field label="고정 환율 (원/달러, 가정)">
+                    <input className="input w-28" inputMode="decimal" value={fixedFx} onChange={(e) => setFixedFx(e.target.value)} aria-label="고정 환율" />
+                  </Field>
+                )}
+                {fxMode === "historical" && !ser.series["KRW=X"] && <p className="pb-2 text-xs text-warn">원/달러 환율 기록이 아직 없습니다. 고정 환율을 쓰세요.</p>}
+              </div>
+            )}
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={showKrw} onChange={(e) => setShowKrw(e.target.checked)} className="h-4 w-4" />
+              결과를 원화(KRW)로도 환산
+            </label>
+          </div>
+        </details>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button type="button" className="btn btn-primary" onClick={run} disabled={ser.loading}>
             {ser.loading ? "가격 데이터 불러오는 중…" : "백테스트 실행"}
@@ -300,7 +338,6 @@ function Results({ out, showKrw }: { out: RunOutput; showKrw: boolean }) {
   const r0 = mains[0];
   const [heat, setHeat] = useState(0);
   const [incomeIdx, setIncomeIdx] = useState(0);
-  // 차트 공통 날짜 (첫 포트폴리오 기준)
   const dates = r0.dates;
   const align = (r: BacktestResult, arr: number[]) => {
     const m = new Map(r.dates.map((d, i) => [d, arr[i]]));
@@ -308,8 +345,12 @@ function Results({ out, showKrw }: { out: RunOutput; showKrw: boolean }) {
   };
   const years = [...new Set(all.flatMap((r) => r.annual.map((a) => a.year)))].sort();
   const lastData = Object.values(out.series)
-    .filter((s) => mains.some((r) => r.holdings.some((h) => h.symbol === s.symbol)))
-    .map((s) => ({ s: s.symbol, last: s.dates[s.dates.length - 1], src: s.source, at: s.fetchedAt }));
+    .filter((x) => all.some((r) => r.holdings.some((h) => h.symbol === x.symbol)))
+    .map((x) => ({ s: x.symbol, last: x.dates[x.dates.length - 1], src: x.source, at: x.fetchedAt }));
+  const flipped = (i: number) => (i < out.items.length ? out.items[i].suite.flipped : out.bench?.suite.flipped) ?? null;
+  const priceOnly = (i: number) => (i < out.items.length ? out.items[i].suite.priceOnly : out.bench?.suite.priceOnly) ?? null;
+  const comps = benchMain ? mains.map((r) => compareWithBenchmark(r, benchMain)) : [];
+  const cgOn = Boolean(r0.capitalGains);
 
   const row = (label: string, f: (r: BacktestResult, i: number) => ReactNode, help?: string) => (
     <tr>
@@ -323,197 +364,226 @@ function Results({ out, showKrw }: { out: RunOutput; showKrw: boolean }) {
       ))}
     </tr>
   );
-  const flipped = (i: number) => (i < out.items.length ? out.items[i].suite.flipped : out.bench?.suite.flipped) ?? null;
-  const priceOnly = (i: number) => (i < out.items.length ? out.items[i].suite.priceOnly : out.bench?.suite.priceOnly) ?? null;
-  const comps = benchMain ? mains.map((r) => compareWithBenchmark(r, benchMain)) : [];
+  const pickBy = (k: "heat" | "income") => (
+    <Seg
+      label={k === "heat" ? "히트맵 포트폴리오" : "분배금 포트폴리오"}
+      value={k === "heat" ? heat : incomeIdx}
+      onChange={k === "heat" ? setHeat : setIncomeIdx}
+      options={all.map((_, i) => ({ v: i, l: i < mains.length ? out.items[i].p.key : "벤치마크" }))}
+    />
+  );
 
-  return (
-    <>
-      <Section title="4. 결과 비교" description={`계산 기간 ${r0.start} ~ ${r0.end} (${fmtYears(r0.years)}, 거래일 ${r0.tradingDays}일) · 모든 포트폴리오에 같은 기간·납입·재투자·비용·세금 조건 적용`}>
-        {[...out.normalizedNote, ...r0.notes].map((n) => (
-          <p key={n} className="mb-1 text-xs text-ink-2">
-            · {n}
-          </p>
-        ))}
-        <div className="mt-2 overflow-x-auto">
-          <table className="table-basic min-w-[560px]">
-            <thead>
-              <tr>
-                <th />
-                {names.map((n, i) => (
-                  <th key={n} className="r">
-                    <span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: `var(${colors[i]})` }} />
-                    {n}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {row("최종 평가금액", (r) => <span className="font-semibold">{usd(r.finalValue, 0)}</span>)}
-              {row("총 납입 원금", (r) => `${usd(r.totalContributed, 0)} (${r.contributions}회 추가)`)}
-              {row("손익", (r) => <span className={tone(r.profit)}>{usd(r.profit, 0)}</span>)}
-              {row("총수익률 (납입 원금 대비)", (r) => <span className={tone(r.totalReturnPct)}>{pct(r.totalReturnPct)}</span>)}
-              {row("시간가중 누적 수익률", (r) => pct(r.twrReturnPct), "추가 납입 시점의 영향을 뺀 전략 자체의 수익률")}
-              {row("연환산 수익률 (CAGR)", (r) => pct(r.cagrPct), "시간가중 수익률 기준. 1년 미만은 표시하지 않음")}
-              {row("금액가중 수익률 (IRR)", (r) => pct(r.irrPct), "납입 시점까지 반영한 실제 투자자 연 수익률")}
-              {row("최대 낙폭 (MDD)", (r) => <span className="text-down">{pct(r.mddPct)}</span>)}
-              {row("최대 낙폭 구간", (r) => <span className="text-[11px]">{r.mddPeak ? `${r.mddPeak} → ${r.mddTrough}${r.mddRecovery ? ` (회복 ${r.mddRecovery})` : " (미회복)"}` : "-"}</span>)}
-              {row("변동성 (연환산)", (r) => pct(r.volPct, 1).replace("+", ""))}
-              {row("샤프 비율", (r) => (r.sharpe !== null ? r.sharpe.toFixed(2) : "-"), `무위험 수익률 ${r0.riskFreePct.toFixed(2)}%`)}
-              {row("누적 분배금 (세전)", (r) => usd(r.income.gross, 0))}
-              {row("누적 분배금 (세후)", (r) => usd(r.income.net, 0))}
-              {row(
-                r0.config.reinvest ? "재투자 효과 (재투자 − 현금 보유)" : "재투자했다면 (차이)",
-                (r, i) => {
-                  const f = flipped(i);
-                  if (!f || !f.ok) return "-";
-                  const d = r0.config.reinvest ? r.finalValue - f.finalValue : f.finalValue - r.finalValue;
-                  return <span className={tone(d)}>{usd(d, 0)}</span>;
-                },
-                "같은 조건에서 분배금 재투자 여부만 바꾼 결과와의 최종 평가금액 차이",
-              )}
-              {row("가격만의 수익률 (분배금 제외)", (r, i) => {
-                const po = priceOnly(i);
-                return po && po.ok ? pct(po.totalReturnPct) : "-";
-              }, "분배금을 전혀 받지 않았다고 본 가격 변화만의 결과")}
-              {row("거래 비용 합계", (r) => usd(r.costs, 0))}
-              {benchMain && row("벤치마크 대비 초과 총수익률", (r, i) => (i < comps.length ? <span className={tone(comps[i].excessTotalPct)}>{pct(comps[i].excessTotalPct)}p</span> : "-"))}
-              {benchMain && row("벤치마크 대비 초과 CAGR", (r, i) => (i < comps.length ? <span className={tone(comps[i].excessCagrPct)}>{pct(comps[i].excessCagrPct)}p</span> : "-"))}
-              {benchMain && row("벤치마크 대비 최대 상대 낙폭", (r, i) => (i < comps.length ? pct(comps[i].relMddPct) : "-"), "벤치마크 대비 상대 성과가 고점에서 가장 많이 뒤처진 폭")}
-            </tbody>
-          </table>
-        </div>
-        {benchMain && (
-          <p className="mt-2 text-sm">
-            {mains.map((r, i) => (
-              <span key={i} className="mr-3">
-                {out.items[i].p.key}는 같은 기간 {out.bench?.symbol}보다 최종 평가금액이 <b className={tone(comps[i].finalDiff)}>{usd(Math.abs(comps[i].finalDiff), 0)} {comps[i].finalDiff >= 0 ? "많았습니다" : "적었습니다"}</b>.
-              </span>
+  const table = (
+    <div className="overflow-x-auto">
+      <table className="table-basic min-w-[560px]">
+        <thead>
+          <tr>
+            <th />
+            {names.map((n, i) => (
+              <th key={n} className="r">
+                <span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: `var(${colors[i]})` }} />
+                {n}
+              </th>
             ))}
-          </p>
-        )}
-      </Section>
+          </tr>
+        </thead>
+        <tbody>
+          {row("최종 평가금액", (r) => <span className="font-semibold">{usd(r.finalValue, 0)}</span>)}
+          {row("총 납입 원금", (r) => `${usd(r.totalContributed, 0)} (${r.contributions}회 추가)`)}
+          {row("손익", (r) => <span className={tone(r.profit)}>{usd(r.profit, 0)}</span>)}
+          {row("총수익률 (납입 원금 대비)", (r) => <span className={tone(r.totalReturnPct)}>{pct(r.totalReturnPct)}</span>)}
+          {row("시간가중 누적 수익률", (r) => pct(r.twrReturnPct), "추가 납입 시점의 영향을 뺀 전략 자체의 수익률")}
+          {row("연환산 수익률 (CAGR)", (r) => pct(r.cagrPct), "시간가중 수익률 기준. 1년 미만은 표시하지 않음")}
+          {row("금액가중 수익률 (IRR)", (r) => pct(r.irrPct), "납입 시점까지 반영한 실제 투자자 연 수익률")}
+          {row("최대 낙폭 (MDD)", (r) => <span className="text-down">{pct(r.mddPct)}</span>)}
+          {row("최대 낙폭 구간", (r) => <span className="text-[11px]">{r.mddPeak ? `${r.mddPeak} → ${r.mddTrough}${r.mddRecovery ? ` (회복 ${r.mddRecovery})` : " (미회복)"}` : "-"}</span>)}
+          {row("변동성 (연환산)", (r) => (r.volPct !== null ? `${r.volPct.toFixed(1)}%` : "-"))}
+          {row("샤프 비율", (r) => (r.sharpe !== null ? r.sharpe.toFixed(2) : "-"), `무위험 수익률 ${r0.riskFreePct.toFixed(2)}%`)}
+          {row("누적 분배금 (세전 / 세후)", (r) => `${usd(r.income.gross, 0)} / ${usd(r.income.net, 0)}`)}
+          {row(
+            r0.config.reinvest ? "재투자 효과 (재투자 − 현금 보유)" : "재투자했다면 (차이)",
+            (r, i) => {
+              const f = flipped(i);
+              if (!f || !f.ok) return "-";
+              const d = r0.config.reinvest ? r.finalValue - f.finalValue : f.finalValue - r.finalValue;
+              return <span className={tone(d)}>{usd(d, 0)}</span>;
+            },
+            "같은 조건에서 분배금 재투자 여부만 바꾼 결과와의 최종 평가금액 차이",
+          )}
+          {row(
+            "가격만의 수익률 (분배금 제외)",
+            (_r, i) => {
+              const po = priceOnly(i);
+              return po && po.ok ? pct(po.totalReturnPct) : "-";
+            },
+            "분배금을 전혀 받지 않았다고 본 가격 변화만의 결과",
+          )}
+          {row("거래 비용 합계", (r) => usd(r.costs, 0))}
+          {cgOn && row("양도소득세 납부 (기간 중)", (r) => (r.capitalGains ? usd(r.capitalGains.paidUsd, 0) : "-"))}
+          {cgOn && row("세후 청산 가치", (r) => (r.capitalGains ? <span className="font-semibold">{usd(r.capitalGains.afterTaxLiquidationUsd, 0)}</span> : "-"), "기간 말 미납 세금과 전부 팔 때의 양도세를 뺀 금액")}
+          {benchMain && row("벤치마크 대비 초과 총수익률", (_r, i) => (i < comps.length ? <span className={tone(comps[i].excessTotalPct)}>{pct(comps[i].excessTotalPct)}p</span> : "-"))}
+          {benchMain && row("벤치마크 대비 초과 CAGR", (_r, i) => (i < comps.length ? <span className={tone(comps[i].excessCagrPct)}>{pct(comps[i].excessCagrPct)}p</span> : "-"))}
+          {benchMain && row("벤치마크 대비 최대 상대 낙폭", (_r, i) => (i < comps.length ? pct(comps[i].relMddPct) : "-"), "벤치마크 대비 상대 성과가 고점에서 가장 많이 뒤처진 폭")}
+        </tbody>
+      </table>
+    </div>
+  );
 
-      <Section title="자산 가치 추이" description="각 날짜 종가 기준 평가금액 (분배금·추가 납입 포함). 점선은 총 납입 원금.">
-        <SimLineChart
-          dates={dates}
-          lines={[...all.map((r, i) => ({ key: names[i], label: names[i], values: align(r, r.value), color: colors[i] })), { key: "c", label: "납입 원금", values: align(r0, r0.contributed), dashed: true, color: "--axis" }]}
-          format="usd"
-          logToggle
-          height={320}
-          ariaLabel="자산 가치 추이"
-        />
-      </Section>
-
-      <Section title="낙폭" description="시간가중 수익 지수의 고점 대비 하락률 (추가 납입 효과 제외)">
-        <SimLineChart dates={dates} lines={all.map((r, i) => ({ key: names[i], label: names[i], values: align(r, r.drawdown), color: colors[i] }))} format="pct" height={220} baseline={0} ariaLabel="낙폭 추이" />
-      </Section>
-
-      <Section title="연도별 수익률" description="시간가중 수익률. 첫해·마지막 해는 부분 기간일 수 있습니다.">
-        <GroupedBars categories={years} series={all.map((r, i) => ({ label: names[i], values: years.map((y) => r.annual.find((a) => a.year === y)?.retPct ?? null), color: colors[i] }))} format="pct" ariaLabel="연도별 수익률 비교" />
-      </Section>
-
-      <Section
-        title="월별 수익률 히트맵"
-        right={<Seg label="히트맵 포트폴리오" value={heat} onChange={setHeat} options={all.map((_, i) => ({ v: i, l: i < mains.length ? out.items[i].p.key : "벤치마크" }))} />}
-      >
-        <ReturnHeatmap monthly={all[heat].monthly} annual={all[heat].annual} />
-      </Section>
-
-      <Section
-        title="월별 분배금 현금흐름"
-        description="받은 분배금(세전)을 지급일(없으면 배당락일) 기준 월로 합계. 재투자 여부와 관계없이 받은 금액입니다."
-        right={<Seg label="분배금 포트폴리오" value={incomeIdx} onChange={setIncomeIdx} options={all.map((_, i) => ({ v: i, l: i < mains.length ? out.items[i].p.key : "벤치마크" }))} />}
-      >
-        {all[incomeIdx].monthlyIncome.length ? (
-          <BarChartSvg points={all[incomeIdx].monthlyIncome.map((m) => ({ label: m.ym, value: m.gross, sub: `세후 ${usd(m.net)}` }))} valueFormat="usd2" ariaLabel="월별 분배금" />
-        ) : (
-          <p className="text-sm text-muted">이 기간에 받은 분배금이 없습니다.</p>
-        )}
-      </Section>
-
-      {benchMain && (
-        <Section title={`${out.bench?.symbol} 대비 상대 성과`} description="포트폴리오 시간가중 지수 ÷ 벤치마크 시간가중 지수 (시작 100). 100보다 크면 벤치마크보다 앞서 있는 상태.">
-          <SimLineChart dates={comps[0].relDates} lines={comps.map((c, i) => ({ key: names[i], label: names[i], values: c.relative, color: colors[i] }))} format="index" baseline={100} height={240} ariaLabel="벤치마크 대비 상대 성과" />
-        </Section>
-      )}
-
-      <Section title="종목별 기여 (기간 말 기준)">
-        <div className="grid gap-3 lg:grid-cols-2">
-          {mains.map((r, i) => (
-            <div key={i} className="overflow-x-auto">
-              <p className="mb-1 text-xs font-semibold">{names[i]}</p>
-              <table className="table-basic">
-                <thead>
-                  <tr>
-                    <th>종목</th>
-                    <th className="r">목표 비중</th>
-                    <th className="r">기간 말 비중</th>
-                    <th className="r">평가금액</th>
-                    <th className="r">받은 분배금</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {r.holdings.map((h) => (
-                    <tr key={h.symbol}>
-                      <td className="font-semibold">{h.symbol}</td>
-                      <td className="r">{h.targetWeight.toFixed(1)}%</td>
-                      <td className="r">{h.endWeight.toFixed(1)}%</td>
-                      <td className="r">{usd(h.value, 0)}</td>
-                      <td className="r">{usd(h.dividendsGross, 0)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+  const tabs = [
+    { key: "table", label: "상세 비교", content: table },
+    {
+      key: "chart",
+      label: "자산 추이·낙폭",
+      content: (
+        <div className="flex flex-col gap-6">
+          <SimLineChart
+            dates={dates}
+            lines={[...all.map((r, i) => ({ key: names[i], label: names[i], values: align(r, r.value), color: colors[i] })), { key: "c", label: "납입 원금", values: align(r0, r0.contributed), dashed: true, color: "--axis" }]}
+            format="usd"
+            logToggle
+            height={320}
+            ariaLabel="자산 가치 추이"
+          />
+          <div>
+            <p className="mb-1 text-xs font-semibold text-ink-2">낙폭 (시간가중, 추가 납입 효과 제외)</p>
+            <SimLineChart dates={dates} lines={all.map((r, i) => ({ key: names[i], label: names[i], values: align(r, r.drawdown), color: colors[i] }))} format="pct" height={200} baseline={0} ariaLabel="낙폭 추이" />
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "periods",
+      label: "연도·월별",
+      content: (
+        <div className="flex flex-col gap-6">
+          <GroupedBars categories={years} series={all.map((r, i) => ({ label: names[i], values: years.map((y) => r.annual.find((a) => a.year === y)?.retPct ?? null), color: colors[i] }))} format="pct" ariaLabel="연도별 수익률 비교" />
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-ink-2">월별 수익률 히트맵</p>
+              {pickBy("heat")}
             </div>
-          ))}
+            <ReturnHeatmap monthly={all[heat].monthly} annual={all[heat].annual} />
+          </div>
         </div>
-      </Section>
-
-      {showKrw && <KrwResults all={all} names={names} fx={out.series["KRW=X"]} />}
-
-      <Section title="참고: 각 종목의 전체 이용 가능 기간 성과" description="종목마다 상장일이 달라 기간이 서로 다릅니다. 위의 공통 기간 결과와 섞어 비교하지 마세요. (분배금 재투자, 세금·비용 미반영)">
-        <div className="overflow-x-auto">
-          <table className="table-basic">
-            <thead>
-              <tr>
-                <th>종목</th>
-                <th>기간</th>
-                <th className="r">총수익률</th>
-                <th className="r">연환산 총수익률</th>
-                <th className="r">연환산 가격 수익률</th>
-                <th className="r">최대 낙폭</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...new Set(all.flatMap((r) => r.holdings.map((h) => h.symbol)))].map((s) => {
-                const f = out.series[s] ? fullPeriodStat(out.series[s]) : null;
-                return f ? (
-                  <tr key={s}>
-                    <td className="font-semibold">{s}</td>
-                    <td className="num text-xs">
-                      {f.first} ~ {f.last} ({fmtYears(f.years)})
-                    </td>
-                    <td className="r">{pct(f.totalReturnPct, 1)}</td>
-                    <td className="r">{pct(f.totalCagrPct)}</td>
-                    <td className="r">{pct(f.priceCagrPct)}</td>
-                    <td className="r text-down">{pct(f.mddPct, 1)}</td>
-                  </tr>
-                ) : null;
-              })}
-            </tbody>
-          </table>
+      ),
+    },
+    {
+      key: "income",
+      label: "분배금",
+      content: (
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs text-ink-2">받은 분배금(세전)을 지급일(없으면 배당락일) 기준 월로 합계</p>
+            {pickBy("income")}
+          </div>
+          {all[incomeIdx].monthlyIncome.length ? (
+            <BarChartSvg points={all[incomeIdx].monthlyIncome.map((m) => ({ label: m.ym, value: m.gross, sub: `세후 ${usd(m.net)}` }))} valueFormat="usd2" ariaLabel="월별 분배금" />
+          ) : (
+            <p className="text-sm text-muted">이 기간에 받은 분배금이 없습니다.</p>
+          )}
         </div>
-      </Section>
-
-      <Section title="데이터 출처와 계산 가정">
+      ),
+    },
+    ...(benchMain
+      ? [
+          {
+            key: "bench",
+            label: `${out.bench?.symbol} 대비`,
+            content: (
+              <div>
+                <p className="mb-2 text-xs text-ink-2">포트폴리오 ÷ 벤치마크 (시간가중, 시작 100). 100보다 크면 벤치마크보다 앞선 상태</p>
+                <SimLineChart dates={comps[0].relDates} lines={comps.map((c, i) => ({ key: names[i], label: names[i], values: c.relative, color: colors[i] }))} format="index" baseline={100} height={260} ariaLabel="벤치마크 대비 상대 성과" />
+              </div>
+            ),
+          },
+        ]
+      : []),
+    {
+      key: "holdings",
+      label: "종목별",
+      content: (
+        <div className="flex flex-col gap-6">
+          <div className="grid gap-4 lg:grid-cols-2">
+            {mains.map((r, i) => (
+              <div key={i} className="overflow-x-auto">
+                <p className="mb-1 text-xs font-semibold">{names[i]} (기간 말)</p>
+                <table className="table-basic">
+                  <thead>
+                    <tr>
+                      <th>종목</th>
+                      <th className="r">목표 비중</th>
+                      <th className="r">기간 말 비중</th>
+                      <th className="r">평가금액</th>
+                      <th className="r">받은 분배금</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.holdings.map((h) => (
+                      <tr key={h.symbol}>
+                        <td className="font-semibold">{h.symbol}</td>
+                        <td className="r">{h.targetWeight.toFixed(1)}%</td>
+                        <td className="r">{h.endWeight.toFixed(1)}%</td>
+                        <td className="r">{usd(h.value, 0)}</td>
+                        <td className="r">{usd(h.dividendsGross, 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+          <div className="overflow-x-auto">
+            <p className="mb-1 text-xs font-semibold">참고: 각 종목의 전체 이용 가능 기간 성과</p>
+            <p className="mb-2 text-[11px] text-muted">종목마다 상장일이 달라 기간이 서로 다릅니다. 위 공통 기간 결과와 섞어 비교하지 마세요 (분배금 재투자, 세금·비용 미반영).</p>
+            <table className="table-basic">
+              <thead>
+                <tr>
+                  <th>종목</th>
+                  <th>기간</th>
+                  <th className="r">총수익률</th>
+                  <th className="r">연환산 총수익률</th>
+                  <th className="r">연환산 가격 수익률</th>
+                  <th className="r">최대 낙폭</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...new Set(all.flatMap((r) => r.holdings.map((h) => h.symbol)))].map((sym) => {
+                  const f = out.series[sym] ? fullPeriodStat(out.series[sym]) : null;
+                  return f ? (
+                    <tr key={sym}>
+                      <td className="font-semibold">{sym}</td>
+                      <td className="num text-xs">
+                        {f.first} ~ {f.last} ({fmtYears(f.years)})
+                      </td>
+                      <td className="r">{pct(f.totalReturnPct, 1)}</td>
+                      <td className="r">{pct(f.totalCagrPct)}</td>
+                      <td className="r">{pct(f.priceCagrPct)}</td>
+                      <td className="r text-down">{pct(f.mddPct, 1)}</td>
+                    </tr>
+                  ) : null;
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ),
+    },
+    ...(cgOn ? [{ key: "tax", label: "양도세", content: <CgResults all={all} names={names} /> }] : []),
+    ...(showKrw ? [{ key: "krw", label: "원화 환산", content: <KrwResults all={all} names={names} fx={out.series["KRW=X"]} /> }] : []),
+    {
+      key: "basis",
+      label: "가정·출처",
+      content: (
         <ul className="list-disc pl-5 text-xs leading-relaxed text-ink-2">
-          <li>가격: 일별 종가(주식분할만 반영, 분배금 미반영 가격). 분배금은 배당락일에 보유 수량 × 주당 지급액으로 한 번만 더합니다 — 수정주가를 쓰지 않아 이중 계산이 없습니다.</li>
-          <li>분배금 재투자: 배당락일 종가로 같은 종목을 매수. 현금 보유: 세후 분배금을 이자 없는 현금으로 보유.</li>
+          {[...out.normalizedNote, ...r0.notes].map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+          <li>가격: 일별 종가(주식분할만 반영). 분배금은 배당락일에 보유 수량 × 주당 지급액으로 한 번만 더합니다 — 수정주가를 쓰지 않아 이중 계산이 없습니다.</li>
+          <li>분배금 재투자: 배당락일 종가로 같은 종목 매수. 현금 보유: 세후 분배금을 이자 없는 현금으로 보유.</li>
           <li>
             추가 납입: {out.cfg.timing === "month_start" ? "매월 첫 거래일" : "매월 마지막 거래일"} 종가로 목표 비중대로 매수 ({usd(out.cfg.monthly)}). 리밸런싱: {REBALANCE_KO[out.cfg.rebalance as Rebalance]} (새 기간 첫 거래일 종가).
           </li>
-          <li>거래 비용 {out.cfg.costPct}% (매수·리밸런싱 거래 금액), 분배금 세금 {out.cfg.taxPct}%. 양도소득세·환전 비용·운용사 보수 외 비용은 반영하지 않았습니다 (운용보수는 이미 가격에 반영됨).</li>
+          <li>거래 비용 {out.cfg.costPct}% (매수·리밸런싱 거래 금액), 분배금 세금 {out.cfg.taxPct}%. 환전 비용은 반영하지 않았습니다 (운용보수는 이미 가격에 반영됨).</li>
           <li>상장 이전 기간은 계산하지 않으며, 가격이 없는 날을 채우지 않습니다.</li>
           {lastData.map((d) => (
             <li key={d.s}>
@@ -522,15 +592,131 @@ function Results({ out, showKrw }: { out: RunOutput; showKrw: boolean }) {
           ))}
           <li>계산 시각: {new Date(out.at).toLocaleString("ko-KR")}</li>
         </ul>
-      </Section>
-    </>
+      ),
+    },
+  ];
+
+  // 사용자가 알아야 할 조정(비중 정규화·벤치마크 제외)은 결과 위에 바로 보여 준다
+  const warnNotes = out.normalizedNote.filter((n) => n.includes("자동 정규화") || n.startsWith("벤치마크"));
+  return (
+    <Section title="4. 결과" description={`계산 기간 ${r0.start} ~ ${r0.end} (${fmtYears(r0.years)}) · 모든 포트폴리오 같은 조건`}>
+      {warnNotes.length > 0 && (
+        <div className="mb-4">
+          <Notice tone="warn">{warnNotes.join(" ")}</Notice>
+        </div>
+      )}
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {all.map((r, i) => (
+          <div key={i} className="rounded-xl border border-line p-3.5">
+            <p className="flex items-center gap-1.5 truncate text-xs font-semibold text-ink-2">
+              <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: `var(${colors[i]})` }} />
+              {names[i]}
+            </p>
+            <p className="num mt-1 text-xl font-bold">{usd(r.finalValue, 0)}</p>
+            <dl className="mt-1 grid grid-cols-3 gap-1 text-[11px]">
+              <div>
+                <dt className="text-muted">총수익률</dt>
+                <dd className={`num font-semibold ${tone(r.totalReturnPct)}`}>{pct(r.totalReturnPct, 1)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">CAGR</dt>
+                <dd className="num font-semibold">{pct(r.cagrPct, 1)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">최대 낙폭</dt>
+                <dd className="num font-semibold text-down">{pct(r.mddPct, 1)}</dd>
+              </div>
+            </dl>
+          </div>
+        ))}
+      </div>
+      {benchMain && (
+        <p className="mb-4 text-sm text-ink-2">
+          {mains.map((r, i) => (
+            <span key={i} className="mr-3 inline-block">
+              {out.items[i].p.key}는 {out.bench?.symbol}보다 최종 평가금액이 <b className={tone(comps[i].finalDiff)}>{usd(Math.abs(comps[i].finalDiff), 0)} {comps[i].finalDiff >= 0 ? "많았습니다" : "적었습니다"}</b>.
+            </span>
+          ))}
+        </p>
+      )}
+      <PanelTabs label="백테스트 결과" tabs={tabs} />
+    </Section>
+  );
+}
+
+function CgResults({ all, names }: { all: BacktestResult[]; names: string[] }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {all.map((r, i) =>
+          r.capitalGains ? (
+            <div key={i} className="rounded-xl border border-line p-3.5 text-sm">
+              <p className="truncate text-xs font-semibold text-ink-2">{names[i]}</p>
+              <p className="mt-1">
+                기간 중 납부 <b className="num">{usd(r.capitalGains.paidUsd, 0)}</b>
+              </p>
+              <p>
+                미납(기간 말) <b className="num">{krw(r.capitalGains.unpaidKrw)}</b>
+              </p>
+              <p>
+                전부 팔면 추가 <b className="num">{krw(r.capitalGains.liquidationExtraKrw)}</b>
+              </p>
+              <p className="mt-1 text-xs text-muted">
+                세후 청산 가치 <b className="num text-ink">{usd(r.capitalGains.afterTaxLiquidationUsd, 0)}</b> (세전 {usd(r.finalValue, 0)})
+              </p>
+            </div>
+          ) : null,
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="table-basic">
+          <thead>
+            <tr>
+              <th>연도</th>
+              {names.map((n) => (
+                <th key={n} className="r">
+                  {n}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {[...new Set(all.flatMap((r) => r.capitalGains?.years.map((y) => y.year) ?? []))].sort().map((y) => (
+              <tr key={y}>
+                <td>{y}</td>
+                {all.map((r, i) => {
+                  const x = r.capitalGains?.years.find((z) => z.year === y);
+                  return (
+                    <td key={i} className="r text-xs">
+                      {x ? (
+                        <>
+                          차익 {krw(x.netGainKrw)}
+                          <span className="block font-semibold">세금 {krw(x.taxKrw)}</span>
+                          <span className="block text-muted">{x.paidOn ? `${x.paidOn} 납부` : "미납"}</span>
+                        </>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] leading-relaxed text-muted">
+        리밸런싱·세금 납부를 위한 매도에서 생긴 차익을 연도별로 합산(손익통산)하고 250만 원을 공제한 뒤 22%를 다음 해 5월 첫 거래일에 납부(현금 → 부족하면 보유 비율대로 매도)한다고 가정했습니다. 이 포트폴리오 외 다른 해외주식 매매가 없다고 보며, 실제 신고는 결제일 기준환율을 씁니다.
+      </p>
+    </div>
   );
 }
 
 function KrwResults({ all, names, fx }: { all: BacktestResult[]; names: string[]; fx: PriceSeries | undefined }) {
   const views = all.map((r) => toKrw(r, fx));
   return (
-    <Section title="원화(KRW) 환산" description="각 날짜의 원/달러 환율로 평가금액과 납입금을 환산했습니다. 원화 기준 수익률에는 환율 변동 효과가 포함됩니다 (환전 비용 미반영).">
+    <div>
+      <p className="mb-2 text-xs text-ink-2">각 날짜의 원/달러 환율로 평가금액과 납입금을 환산 (원화 수익률에는 환율 변동 효과 포함, 환전 비용 미반영)</p>
       <div className="overflow-x-auto">
         <table className="table-basic">
           <thead>
@@ -567,7 +753,7 @@ function KrwResults({ all, names, fx }: { all: BacktestResult[]; names: string[]
           </tbody>
         </table>
       </div>
-    </Section>
+    </div>
   );
 }
 

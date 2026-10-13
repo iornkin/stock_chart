@@ -156,8 +156,8 @@ export default async function StockPage({ params, searchParams }: Props) {
   return (
     <div className="flex flex-col gap-5">
       <AutoRefresh />
-      <nav className="text-xs text-muted" aria-label="경로">
-        <Link href="/stocks" className="hover:text-accent">지원 종목</Link> / {CATEGORY_LABELS[inst.category]} / {symbol}
+      <nav className="-mb-2 text-xs text-muted" aria-label="경로">
+        <Link href="/stocks" className="hover:text-accent">전체 종목</Link> / {CATEGORY_LABELS[inst.category]} / {symbol}
       </nav>
       <header className="card flex flex-col gap-3 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -199,32 +199,21 @@ export default async function StockPage({ params, searchParams }: Props) {
             {q?.refreshError ?? quotesFail?.message ?? "데이터 제공처 응답 없음"} · 마지막 정상 시세 갱신: {lastSuccessAt("refresh_quotes") ? formatEt(lastSuccessAt("refresh_quotes")) : "기록 없음"}
           </Notice>
         )}
-        <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-ink-2">
-          <div>
-            <dt className="inline text-muted">거래소 </dt>
-            <dd className="inline">{q?.exchange ?? inst.exchange ?? "미제공"}</dd>
-          </div>
-          <div>
-            <dt className="inline text-muted">시장 </dt>
-            <dd className="inline"><MarketPhaseText at={renderedAt} />{q?.marketState ? ` (제공처 기록: ${q.marketState})` : ""}</dd>
-          </div>
-          <div>
-            <dt className="inline text-muted">마지막 거래 시각 </dt>
-            <dd className="inline num">{formatEt(q?.marketTime)}</dd>
-          </div>
-          <div>
-            <dt className="inline text-muted">데이터 갱신 </dt>
-            <dd className="inline num">{q ? <>{formatEt(q.fetchedAt)} <RelTime ms={q.fetchedAt} paren /></> : "-"}</dd>
-          </div>
-          <div>
-            <dt className="inline text-muted">데이터 구분 </dt>
-            <dd className={`inline ${delay?.realtime ? "text-good" : "text-warn"}`}>{delay?.text ?? "-"}</dd>
-          </div>
-          <div>
-            <dt className="inline text-muted">출처 </dt>
-            <dd className="inline">{q?.source ?? "-"}</dd>
-          </div>
-        </dl>
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+          <span>{q?.exchange ?? inst.exchange ?? "거래소 미제공"}</span>
+          <span aria-hidden>·</span>
+          <MarketPhaseText at={renderedAt} />
+          <span aria-hidden>·</span>
+          <span className="num">마지막 거래 {formatEt(q?.marketTime)}</span>
+          <span aria-hidden>·</span>
+          <span className={delay?.realtime ? "text-good" : "text-warn"}>{delay?.text ?? "-"}</span>
+          <span aria-hidden>·</span>
+          <span className="num" title={q ? `데이터 갱신 ${formatEt(q.fetchedAt)}` : undefined}>
+            {q ? <>갱신 <RelTime ms={q.fetchedAt} /></> : "갱신 기록 없음"}
+          </span>
+          <span aria-hidden>·</span>
+          <span>출처 {q?.source ?? "-"}</span>
+        </p>
         {q?.freshness === "stale" && (
           <Notice tone="warn">
             최신 시세 조회에 실패해 {formatEt(q.fetchedAt)}에 받은 데이터를 표시하고 있습니다. {q.refreshError ? `(${q.refreshError})` : ""}
@@ -232,7 +221,7 @@ export default async function StockPage({ params, searchParams }: Props) {
         )}
       </header>
 
-      <Section title="주가 차트 · 거래량 · 기술적 지표" description="확대/축소: 마우스 휠·핀치 · 이동: 드래그 · 패널 경계를 끌어 높이 조절">
+      <Section title="차트" description="휠·핀치로 확대, 드래그로 이동 · 패널 경계를 끌어 높이 조절">
         <StockChart symbol={symbol} />
       </Section>
 

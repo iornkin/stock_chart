@@ -82,7 +82,8 @@ async function main() {
     // 대시보드
     await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
     let t = await textOf(page);
-    check("대시보드: 정적 스냅샷 안내", t.includes("정적 스냅샷") && t.includes("실시간 시세가 아니며"));
+    const pill = page.locator('header [title^="정적 스냅샷"]').first();
+    check("대시보드: 정적 스냅샷 안내 (헤더)", (await pill.innerText()).includes("스냅샷") && ((await pill.getAttribute("title")) ?? "").includes("실시간 시세가 아니며"));
     check("대시보드: 시장 지수·종목 카드", t.includes("S&P 500") && (await page.locator(`a[href="${BASE_PATH}/stock/JEPI/"]`).count()) > 0);
     check("대시보드: 시장 상태 문구", /\(ET\) · /.test(t));
     check("대시보드: 관심 종목 시세(정적 JSON)", (await page.locator("text=관심 종목").count()) > 0 && !t.includes("HTTP 404"));
@@ -128,7 +129,7 @@ async function main() {
     // 브리핑 목록·기록
     await page.goto(`${BASE}/briefing/`, { waitUntil: "networkidle" });
     t = await textOf(page);
-    const dates = await page.locator(`a[href^="${BASE_PATH}/briefing/?date="]`).allInnerTexts();
+    const dates = (await page.locator(`a[href^="${BASE_PATH}/briefing/?date="]`).evaluateAll((els) => els.map((e) => e.getAttribute("href") ?? ""))).map((h) => /date=(\d{4}-\d{2}-\d{2})/.exec(h)?.[1] ?? "").filter((d, i, a) => d && a.indexOf(d) === i);
     check("브리핑 목록: 날짜 선택", dates.length >= 2, dates.join(", "));
     if (dates.length >= 2) {
       await page.locator(`a[href^="${BASE_PATH}/briefing/?date=${dates[1]}"]`).first().click();
@@ -156,7 +157,7 @@ async function main() {
     // 차별화 기능 (정적 사이트)
     await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
     t = await textOf(page);
-    check("대시보드: 오늘 확인할 것·새 변화 종목·레버리지 위험", t.includes("오늘 확인할 것") && t.includes("오늘 새 변화가 있는 종목") && t.includes("레버리지 ETF 위험 지표"));
+    check("대시보드: 오늘 확인할 것·새 변화 탭·레버리지 위험 한 줄", t.includes("오늘 확인할 것") && (await page.getByRole("tab", { name: /새 변화/ }).count()) === 1 && t.includes("최고점 대비"));
     await page.waitForTimeout(800);
     check("대시보드: 관심 종목 새 변화(정적 JSON)", /개 중 \d+개에 새 변화|새로 생긴 중요한 변화 없음/.test(await textOf(page)));
     await page.goto(`${BASE}/stock/QQQ/?tab=briefing`, { waitUntil: "networkidle" });
@@ -170,6 +171,7 @@ async function main() {
     t = await textOf(page);
     check("배당 탭: 계산기·수익률 분해 (정적)", t.includes("현금흐름 계산기") && t.includes("수익률의 관계"));
     await page.goto(`${BASE}/income/`, { waitUntil: "networkidle" });
+    await page.getByRole("tab", { name: "보유 종목 현금흐름" }).click();
     await page.getByLabel("보유 종목 선택").selectOption("JEPI");
     await page.getByRole("button", { name: "추가" }).click();
     await page.waitForTimeout(300);
@@ -192,6 +194,17 @@ async function main() {
     await page.goto(`${BASE}/status/`, { waitUntil: "networkidle" });
     t = await textOf(page);
     check("데이터 상태: 예약 실행 안내", t.includes("GitHub Actions 예약 실행") && !t.includes("스케줄러(워커)가 실행되고 있지 않습니다"));
+
+    // 홈 화면 설치(PWA): 저장소 경로(/stock_chart) 아래에서 동작해야 함
+    await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    const manHref = await page.locator('link[rel="manifest"]').getAttribute("href");
+    const manRes = await page.request.get(`${ORIGIN}${manHref}`);
+    const man = manRes.ok() ? await manRes.json() : null;
+    const icons = man ? await Promise.all((man.icons as { src: string }[]).map(async (i) => (await page.request.get(new URL(i.src, `${ORIGIN}${manHref}`).href)).status())) : [];
+    check("PWA: 매니페스트·아이콘 (저장소 경로 기준)", manHref === `${BASE_PATH}/manifest.webmanifest` && man?.start_url === "./" && icons.length >= 3 && icons.every((x) => x === 200), `${manHref} ${icons.join(",")}`);
+    check("PWA: 애플 아이콘·서비스 워커 파일", (await page.locator('link[rel="apple-touch-icon"]').getAttribute("href")) === `${BASE_PATH}/icons/apple-touch-icon.png` && (await page.request.get(`${BASE}/sw.js`)).status() === 200 && (await page.request.get(`${BASE}/offline.html`)).status() === 200);
+    const swScope = await page.evaluate(() => Promise.race([navigator.serviceWorker.ready.then((r) => r.scope), new Promise((res) => setTimeout(() => res(null), 8000))]));
+    check("PWA: 서비스 워커 범위 = 사이트 경로", swScope === `${BASE}/`, String(swScope));
 
     // 없는 주소
     const r = await page.goto(`${BASE}/stock/NOPE/`);

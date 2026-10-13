@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIncome, usePortfolio, useQuotes, useRuns, useSeriesMap, useStrategies } from "@/lib/client/user-data";
 import { usePortfolioSummary } from "@/lib/client/portfolio-summary";
-import { crashVol, dailyVol, dividendStress, episodeImpact, estimateBeta, findEpisodes, linearShock, pathShock, type DividendScenario } from "@/lib/sim/stress";
+import { crashVol, dailyVol, dividendStress, episodeImpact, estimateBeta, findEpisodes, pathShock, type DividendScenario } from "@/lib/sim/stress";
 import { getInstrument } from "@/lib/instruments";
-import { Notice, Section, Empty } from "@/components/ui";
+import { Notice, Section, Empty, Fold } from "@/components/ui";
 import { Disclaimer, Field, HoldingsEditor, parseNum, pct, PRESETS, rowsFrom, rowsProblem, rowsToItems, Seg, tone, usd, type WeightRow } from "./common";
 import { GroupedBars } from "./charts";
 
@@ -68,7 +68,6 @@ export default function StressClient() {
 
   return (
     <div className="flex flex-col gap-5">
-      <Notice tone="warn" title="가정에 따른 스트레스 테스트입니다">아래 결과는 실제 향후 분배금이나 손실의 예측이 아닙니다. 정한 가정이 일어났을 때 얼마나 영향을 받는지 보여 주는 계산입니다.</Notice>
       <Section title="1. 대상 포트폴리오">
         <div className="flex flex-wrap items-center gap-3">
           <Seg label="대상" value={source} onChange={setSource} options={[{ v: "mine", l: "내 자산 (현재 보유)" }, { v: "manual", l: "직접 입력 / 저장한 전략" }]} />
@@ -122,7 +121,7 @@ export default function StressClient() {
 
 function DividendStress({ positions, onSave }: { positions: Pos[]; onSave: (t: string, s: { label: string; value: string }[]) => void }) {
   const income = useIncome();
-  const [cuts, setCuts] = useState("0, 10, 20, 30");
+  const [cuts, setCuts] = useState("10, 20, 30");
   const [tax, setTax] = useState("15");
   const [targets, setTargets] = useState<Record<string, string>>({});
   const [sel, setSel] = useState(0);
@@ -130,10 +129,10 @@ function DividendStress({ positions, onSave }: { positions: Pos[]; onSave: (t: s
   if (income.error || !income.data) return <Notice tone="critical">분배금 기록을 불러오지 못했습니다: {income.error}</Notice>;
   const items = income.data.items;
   const ipos = positions.map((p) => ({ symbol: p.symbol, shares: p.shares, ttmPerShare: items[p.symbol]?.ttmPerShare ?? 0, monthWeights: items[p.symbol]?.monthWeights ?? [] }));
-  const uniform = [...new Set(cuts.split(/[,\s]+/).map(parseNum).filter((v) => v >= 0 && v <= 100))];
+  const uniform = [...new Set(cuts.split(/[,\s]+/).map(parseNum).filter((v) => v > 0 && v <= 100))];
   const targeted = Object.fromEntries(Object.entries(targets).map(([k, v]) => [k, parseNum(v)]).filter(([, v]) => (v as number) > 0 && (v as number) <= 100));
   const scenarios: DividendScenario[] = [
-    ...uniform.map((u) => ({ key: `u${u}`, label: u === 0 ? "분배금 변화 없음" : `전체 ${u}% 감소`, uniformCutPct: u })),
+    ...uniform.map((u) => ({ key: `u${u}`, label: `전체 ${u}% 감소`, uniformCutPct: u })),
     ...(Object.keys(targeted).length ? [{ key: "t", label: `특정 종목만 감소 (${Object.entries(targeted).map(([k, v]) => `${k} ${v}%`).join(", ")})`, targetedCuts: targeted as Record<string, number> }] : []),
   ];
   const r = dividendStress(ipos, scenarios, parseNum(tax));
@@ -141,9 +140,9 @@ function DividendStress({ positions, onSave }: { positions: Pos[]; onSave: (t: s
   const noIncome = ipos.filter((p) => p.ttmPerShare === 0).map((p) => p.symbol);
   return (
     <>
-      <Section title="2. 분배금 감소 가정" description="기준 = 현재 보유 수량 × 최근 12개월 실제 주당 정기 지급액 (특별분배 제외). 전체 동일 감소와 특정 종목만 감소하는 시나리오를 따로 계산합니다.">
+      <Section title="2. 분배금 감소 가정" description="기준 = 보유 수량 × 최근 12개월 실제 주당 정기 지급액 (특별분배 제외)">
         <div className="flex flex-wrap items-end gap-3">
-          <Field label="전체 동일 감소율 (%) — 쉼표로 여러 개">
+          <Field label="모든 종목 감소율 (%) · 쉼표로 여러 개">
             <input className="input w-56" value={cuts} onChange={(e) => setCuts(e.target.value)} aria-label="전체 감소율 목록" />
           </Field>
           <Field label="분배금 세금 (%)">
@@ -169,30 +168,27 @@ function DividendStress({ positions, onSave }: { positions: Pos[]; onSave: (t: s
             <thead>
               <tr>
                 <th>시나리오</th>
-                <th>유형</th>
                 <th className="r">연간 분배금 (세전)</th>
                 <th className="r">변화</th>
-                <th className="r">연간 세후 (재투자 가능 금액)</th>
+                <th className="r">연간 세후</th>
                 <th className="r">월평균 세후</th>
               </tr>
             </thead>
             <tbody>
               <tr className="text-muted">
-                <td>기준 (최근 12개월 실제)</td>
-                <td>-</td>
+                <td className="whitespace-nowrap">지금 (최근 12개월 실제)</td>
                 <td className="r">{usd(r.baseAnnualGross)}</td>
                 <td className="r">-</td>
                 <td className="r">{usd(r.baseAnnualNet)}</td>
                 <td className="r">{usd(r.baseAnnualNet / 12)}</td>
               </tr>
               {r.rows.map((x, i) => (
-                <tr key={x.key} className={i === sel ? "bg-accent-soft" : ""} onClick={() => setSel(i)}>
-                  <td>
+                <tr key={x.key} className={i === Math.min(sel, r.rows.length - 1) ? "bg-accent-soft" : ""} onClick={() => setSel(i)}>
+                  <td className="whitespace-nowrap">
                     <button type="button" className="text-left" onClick={() => setSel(i)}>
                       {x.label}
                     </button>
                   </td>
-                  <td className="text-xs">{x.kind === "uniform" ? "전체 동일" : "특정 종목"}</td>
                   <td className="r font-semibold">{usd(x.annualGross)}</td>
                   <td className={`r ${tone(x.diffAnnualGross)}`}>
                     {usd(x.diffAnnualGross)} ({pct(x.diffPct, 1)})
@@ -207,8 +203,8 @@ function DividendStress({ positions, onSave }: { positions: Pos[]; onSave: (t: s
         {row && (
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <div>
-              <p className="mb-1 text-xs font-semibold text-ink-2">월별 예상 분배금 (세전): 기준 vs {row.label}</p>
-              <GroupedBars categories={Array.from({ length: 12 }, (_, i) => `${i + 1}월`)} series={[{ label: "기준", values: r.baseMonthly, color: "--s1" }, { label: row.label, values: row.monthlyGross, color: "--s2" }]} format="usd" height={200} ariaLabel="월별 분배금 변화" />
+              <p className="mb-1 text-xs font-semibold text-ink-2">월별 분배금 (세전): 지금 vs {row.label}</p>
+              <GroupedBars categories={Array.from({ length: 12 }, (_, i) => `${i + 1}월`)} series={[{ label: "지금", values: r.baseMonthly, color: "--s1" }, { label: row.label, values: row.monthlyGross, color: "--s2" }]} format="usd" height={200} ariaLabel="월별 분배금 변화" />
             </div>
             <div className="overflow-x-auto">
               <p className="mb-1 text-xs font-semibold text-ink-2">종목별 영향 — {row.label}</p>
@@ -237,7 +233,7 @@ function DividendStress({ positions, onSave }: { positions: Pos[]; onSave: (t: s
             </div>
           </div>
         )}
-        <Disclaimer>월별 배분은 각 종목의 최근 12개월 실제 지급 월 비중을 따릅니다. 분배금이 줄면 재투자할 수 있는 금액도 그만큼 줄어듭니다. 이 결과는 가정에 따른 스트레스 테스트이지 실제 향후 분배금 예측이 아닙니다.</Disclaimer>
+        <Disclaimer>가정에 따른 계산이며 실제 향후 분배금 예측이 아닙니다. 월별 배분은 각 종목의 최근 12개월 실제 지급 월 비중을 따릅니다.</Disclaimer>
       </Section>
     </>
   );
@@ -271,7 +267,11 @@ function MarketStress({ positions, onSave }: { positions: Pos[]; onSave: (t: str
     const sp = positions.map((p, i) => ({ symbol: p.symbol, value: p.value, beta: betas[i].beta }));
     const list = [...new Set(shocks.split(/[,\s]+/).map(parseNum).filter((v) => v >= 0 && v < 100))];
     const d = Math.max(1, Math.min(500, Math.round(parseNum(days)) || 20));
-    const rowsOut = list.map((s) => ({ shock: s, lin: linearShock(sp, s), path: s > 0 ? pathShock(sp, s, d, sigma, 800, 11) : null }));
+    const rowsOut = list.map((s) => {
+      if (s === 0) return { shock: s, retPct: 0 as number | null, per: positions.map(() => 0 as number | null) };
+      const path = pathShock(sp, s, d, sigma, 800, 11);
+      return { shock: s, retPct: path.portfolio?.p50 ?? null, per: positions.map((p) => path.perHolding.find((x) => x.symbol === p.symbol)?.p50 ?? null) };
+    });
     const weights = positions.map((p) => ({ symbol: p.symbol, weight: (p.value / total) * 100 }));
     const dataEnd = idx.dates[idx.dates.length - 1];
     return { betas, eps: eps.map((e) => episodeImpact(e, weights, ser.series, dataEnd)), sigma, recent, cv, rowsOut, d };
@@ -297,7 +297,7 @@ function MarketStress({ positions, onSave }: { positions: Pos[]; onSave: (t: str
           <Field label="지수 하락률 (%) — 쉼표로 여러 개">
             <input className="input w-48" value={shocks} onChange={(e) => setShocks(e.target.value)} aria-label="지수 하락률 목록" />
           </Field>
-          <Field label="하락 기간 (거래일)" hint="일일 복리 경로 계산용">
+          <Field label="하락 기간 (거래일)">
             <input className="input w-20" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} aria-label="하락 기간" />
           </Field>
           <Field label="하락 중 변동성">
@@ -309,16 +309,19 @@ function MarketStress({ positions, onSave }: { positions: Pos[]; onSave: (t: str
         </div>
       </Section>
 
-      <Section title="3. 단순 충격 분석" description="지수가 X% 하락한다고 가정할 때. ① 베타 단순 적용 = 베타 × 하락률. ② 일일 복리 경로 = 지수가 정한 기간 동안 오르내리며 X% 하락하는 경로 800개에서 각 종목이 매일 '베타 × 지수 일간 수익률'로 움직인 결과의 중앙값(10~90% 범위)." right={<button type="button" className="btn btn-sm" onClick={() => onSave(`하락장 스트레스 테스트 (${index})`, calc.rowsOut.map((r) => ({ label: `지수 −${r.shock}%`, value: r.path?.portfolio ? `${pct(r.path.portfolio.p50, 1)} (경로)` : pct(r.lin.retPct, 1) })))}>결과 저장</button>}>
+      <Section
+        title="3. 지수가 하락하면"
+        description={`${index}가 ${calc.d}거래일 동안 오르내리며 정한 만큼 하락하는 경로 800개를 만들고, 각 종목이 매일 '베타 × 지수 일간 수익률'만큼 움직였을 때의 중앙값입니다.`}
+        right={<button type="button" className="btn btn-sm" onClick={() => onSave(`하락장 스트레스 테스트 (${index})`, calc.rowsOut.map((r) => ({ label: `지수 −${r.shock}%`, value: pct(r.retPct, 1) })))}>결과 저장</button>}
+      >
         <div className="overflow-x-auto">
           <table className="table-basic">
             <thead>
               <tr>
                 <th>지수 하락</th>
-                <th className="r">예상 손실액 (베타 단순)</th>
+                <th className="r">예상 손익률</th>
+                <th className="r">예상 손익</th>
                 <th className="r">하락 후 자산</th>
-                <th className="r">하락 후 수익률 (베타 단순)</th>
-                <th className="r">일일 복리 경로 중앙값 [10~90%]</th>
               </tr>
             </thead>
             <tbody>
@@ -329,34 +332,31 @@ function MarketStress({ positions, onSave }: { positions: Pos[]; onSave: (t: str
                       {r.shock === 0 ? "하락 없음" : `−${r.shock}%`}
                     </button>
                   </td>
-                  <td className="r text-down">{r.lin.loss !== null ? usd(r.lin.loss, 0) : "-"}</td>
-                  <td className="r">{r.lin.after !== null ? usd(r.lin.after, 0) : "-"}</td>
-                  <td className={`r ${tone(r.lin.retPct)}`}>{pct(r.lin.retPct, 1)}</td>
-                  <td className="r">{r.path?.portfolio ? `${pct(r.path.portfolio.p50, 1)} [${pct(r.path.portfolio.p10, 1)} ~ ${pct(r.path.portfolio.p90, 1)}]` : r.shock === 0 ? "0" : "-"}</td>
+                  <td className={`r font-semibold ${tone(r.retPct)}`}>{r.retPct !== null ? pct(r.retPct, 1) : "계산 불가"}</td>
+                  <td className={`r ${tone(r.retPct)}`}>{r.retPct !== null ? usd((total * r.retPct) / 100, 0) : "-"}</td>
+                  <td className="r">{r.retPct !== null ? usd(total * (1 + r.retPct / 100), 0) : "-"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         {cur && (
-          <div className="mt-4 overflow-x-auto">
-            <p className="mb-1 text-xs font-semibold text-ink-2">종목별 손익 기여 — 지수 −{cur.shock}% ({index})</p>
+          <div className="mt-5 overflow-x-auto">
+            <p className="mb-1 text-xs font-semibold text-ink-2">종목별 — 지수 −{cur.shock}% (위 표에서 하락률을 누르면 바뀝니다)</p>
             <table className="table-basic">
               <thead>
                 <tr>
                   <th>종목</th>
                   <th className="r">비중</th>
-                  <th className="r">베타 (상관계수)</th>
-                  <th className="r">베타 단순 손익률</th>
+                  <th className="r">베타</th>
+                  <th className="r">예상 손익률</th>
                   <th className="r">손익 기여</th>
-                  <th className="r">일일 복리 경로 [10~90%]</th>
                 </tr>
               </thead>
               <tbody>
                 {positions.map((p, i) => {
                   const b = calc.betas[i];
-                  const lin = cur.lin.rows[i];
-                  const ph = cur.path?.perHolding.find((x) => x.symbol === p.symbol);
+                  const r = cur.per[i];
                   const lev = getInstrument(p.symbol)?.leverage;
                   return (
                     <tr key={p.symbol}>
@@ -365,21 +365,28 @@ function MarketStress({ positions, onSave }: { positions: Pos[]; onSave: (t: str
                         {lev && <span className="ml-1 rounded bg-warn-soft px-1 text-[10px] text-warn">일일 {lev}배</span>}
                       </td>
                       <td className="r">{((p.value / total) * 100).toFixed(1)}%</td>
-                      <td className="r">{b.beta !== null ? `${b.beta.toFixed(2)} (${b.corr?.toFixed(2)})` : `계산 불가 (${b.days}일)`}</td>
-                      <td className={`r ${tone(lin.retPct)}`}>{pct(lin.retPct, 1)}</td>
-                      <td className={`r ${tone(lin.loss)}`}>{lin.loss !== null ? usd(lin.loss, 0) : "-"}</td>
-                      <td className="r">{ph ? `${pct(ph.p50, 1)} [${pct(ph.p10, 1)} ~ ${pct(ph.p90, 1)}]` : "-"}</td>
+                      <td className="r" title={b.corr !== null ? `상관계수 ${b.corr.toFixed(2)}` : undefined}>
+                        {b.beta !== null ? b.beta.toFixed(2) : `계산 불가 (${b.days}일)`}
+                      </td>
+                      <td className={`r ${tone(r)}`}>{r !== null ? pct(r, 1) : "-"}</td>
+                      <td className={`r ${tone(r)}`}>{r !== null ? usd((p.value * r) / 100, 0) : "-"}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-            <p className="mt-1 text-[11px] text-muted">베타는 최근 {lookback === 252 ? "1년" : lookback === 756 ? "3년" : "5년"} 일간 총수익률(분배금 포함)을 지수 일간 수익률에 회귀해 추정했습니다. 레버리지 ETF 의 베타에는 일일 배수가 이미 들어 있으며, 경로 계산은 매일 배수를 다시 맞추는 구조를 반영합니다. 같은 하락률이라도 하락 기간·변동성에 따라 레버리지 ETF 의 손실은 달라집니다.</p>
           </div>
         )}
+        <Fold summary="계산 방법">
+          <ul className="list-disc space-y-1 pl-4 text-xs">
+            <li>베타 = 최근 {lookback === 252 ? "1년" : lookback === 756 ? "3년" : "5년"} 일간 총수익률(분배금 포함)을 {index} 일간 수익률에 회귀한 값입니다.</li>
+            <li>레버리지 ETF 는 베타에 일일 배수가 이미 들어 있고, 매일 배수를 다시 맞추기 때문에 같은 하락률이라도 기간이 길고 변동성이 클수록 손실이 커집니다. 단순히 &lsquo;베타 × 하락률&rsquo;로 계산하면 이 효과가 빠집니다.</li>
+            <li>하락 중 변동성: {volMode === "crisis" ? `과거 급락기 평균 ${calc.cv ? (calc.cv.sigma * 100).toFixed(2) : "-"}%/일` : `최근 3년 ${(calc.recent * 100).toFixed(2)}%/일`}. 경로 800개 중 가운데 값을 보여 줍니다.</li>
+          </ul>
+        </Fold>
       </Section>
 
-      <Section title="4. 과거 실제 하락 구간" description={`${index}가 고점 대비 ${threshold}% 이상 하락했던 실제 구간에서, 같은 비중으로 고점에 샀을 때 각 종목의 실제 총수익률(분배금 재투자). 그 구간에 상장 전이던 종목이 있으면 포트폴리오 결과는 계산하지 않습니다.`} right={<Seg label="하락 기준" value={threshold} onChange={setThreshold} options={[{ v: 10, l: "10%" }, { v: 15, l: "15%" }, { v: 20, l: "20%" }]} />}>
+      <Section title="4. 과거 실제 하락 구간" description={`${index}가 고점 대비 ${threshold}% 이상 하락했던 실제 구간 · 고점에 같은 비중으로 샀을 때의 실제 총수익률(분배금 재투자). 상장 전 종목이 있으면 포트폴리오 결과는 비웁니다.`} right={<Seg label="하락 기준" value={threshold} onChange={setThreshold} options={[{ v: 10, l: "10%" }, { v: 15, l: "15%" }, { v: 20, l: "20%" }]} />}>
         <div className="overflow-x-auto">
           <table className="table-basic">
             <thead>
@@ -412,7 +419,7 @@ function MarketStress({ positions, onSave }: { positions: Pos[]; onSave: (t: str
         </div>
         {calc.eps.length === 0 && <p className="text-sm text-muted">이 기준을 넘는 하락 구간이 데이터에 없습니다.</p>}
       </Section>
-      <Disclaimer>단순 충격 분석은 과거 베타가 앞으로도 같다고 가정하며, 실제 하락장에서는 상관관계와 변동성이 크게 달라질 수 있습니다. 과거 하락 구간 결과는 실제 기록이지만 다음 하락이 같은 모습일 것이라는 뜻은 아닙니다. 실제 손실은 이 계산과 다를 수 있습니다.</Disclaimer>
+      <Disclaimer>가정에 따른 계산이며 실제 손실 예측이 아닙니다. 과거 베타가 앞으로도 같다고 가정하며, 실제 하락장에서는 상관관계와 변동성이 크게 달라질 수 있습니다. 과거 하락 구간 결과는 실제 기록이지만 다음 하락이 같은 모습일 것이라는 뜻은 아닙니다. 실제 손실은 이 계산과 다를 수 있습니다.</Disclaimer>
     </>
   );
 }

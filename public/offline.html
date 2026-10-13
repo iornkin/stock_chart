@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>연결 안 됨 · US Stock Insight</title>
+<style>
+  :root { --bg: #f4f4f1; --surface: #fcfcfb; --text: #0b0b0b; --muted: #52514e; --line: rgba(11, 11, 11, 0.1); --accent: #2a78d6; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0d0d0d; --surface: #1a1a19; --text: #f0efec; --muted: #c3c2b7; --line: rgba(255, 255, 255, 0.1); --accent: #5598e7; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  main { max-width: 420px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; line-height: 1.6; color: var(--muted); font-size: 14px; }
+  button { margin-top: 4px; border: 0; border-radius: 8px; padding: 10px 16px; background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <h1>인터넷에 연결되어 있지 않습니다</h1>
+  <p>시세·분배금·브리핑은 항상 최신 데이터로 보여 드리기 위해 저장해 두지 않습니다. 연결된 뒤 다시 열어 주세요.</p>
+  <p>내 자산·전략 등 직접 입력한 내용은 이 기기에 그대로 남아 있습니다.</p>
+  <button type="button" onclick="location.reload()">다시 시도</button>
+</main>
+</body>
+</html>

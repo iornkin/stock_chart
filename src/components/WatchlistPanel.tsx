@@ -56,7 +56,7 @@ export default function WatchlistPanel() {
       alive = false;
     };
   }, [key]);
-  const changed = list.filter((s) => (digests[s]?.maxImportance ?? 0) >= 2).length;
+  const changed = list.filter((s) => digests[s]?.changes.some((c) => c.importance >= 2 && c.tag !== "news")).length;
   return (
     <section className="card p-4 sm:p-6">
       <div className="mb-3 flex items-baseline justify-between gap-2">
@@ -96,7 +96,7 @@ export default function WatchlistPanel() {
                     )}
                   </span>
                 </div>
-                {d && <ChangeChips d={d} max={2} minImportance={2} />}
+                {d && <ChangeChips d={d} max={1} minImportance={2} />}
               </li>
             );
           })}

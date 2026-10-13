@@ -1,0 +1,17 @@
+{
+  "name": "US Stock Insight — 미국 주식·ETF 분석",
+  "short_name": "US Stock",
+  "description": "미국 주식·ETF 차트, 배당·분배금, 일일 브리핑, 내 자산·백테스트",
+  "lang": "ko",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f4f1",
+  "theme_color": "#2a78d6",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

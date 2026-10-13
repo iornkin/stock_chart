@@ -13,6 +13,8 @@ import { formatEt, relativeTime, addDays } from "@/lib/time";
 import { Notice, Section, Empty } from "@/components/ui";
 import { categoryOf, Field, KV, LocalOnlyNote, Money, parseNum, pct, Seg, signedUsd, SymbolField, tone, usd, krw } from "@/components/sim/common";
 import { SimLineChart, WeightBars } from "@/components/sim/charts";
+import PanelTabs from "@/components/PanelTabs";
+import TaxSection from "./TaxSection";
 import { fetchSeries } from "@/lib/client/data-api";
 
 export default function PortfolioClient() {
@@ -22,6 +24,11 @@ export default function PortfolioClient() {
   const fx = useFx();
   const [prefs] = usePrefs();
   const today = etToday();
+  // 처음 열었을 때 비어 있었다면, 첫 종목을 넣은 뒤에도 입력 탭을 계속 보여 준다
+  const [startedEmpty, setStartedEmpty] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (store.loaded && startedEmpty === null) setStartedEmpty(s.empty);
+  }, [store.loaded, s.empty, startedEmpty]);
 
   // 간편 입력: 하루 한 번 평가금액 기록 (시세가 모두 있을 때만)
   useEffect(() => {
@@ -36,15 +43,19 @@ export default function PortfolioClient() {
 
   const save = (fn: (cur: PortfolioData) => PortfolioData) => store.set((cur) => ({ ...fn(cur), updatedAt: Date.now() }));
 
+  const tabs = [
+    { key: "holdings", label: "보유 종목", content: <AllocationSection s={s} /> },
+    { key: "income", label: "분배금", content: <DividendSection s={s} /> },
+    { key: "tax", label: "세금", content: <TaxSection p={p} s={s} /> },
+    { key: "history", label: "자산 추이", content: <HistorySection p={p} s={s} /> },
+    { key: "krw", label: "원화 환산", content: <KrwSection s={s} p={p} fx={fx} /> },
+    { key: "input", label: p.mode === "simple" ? "보유 종목 입력" : "거래 입력·내역", content: <InputSection p={p} save={save} s={s} /> },
+  ];
   return (
     <div className="flex flex-col gap-5">
       {store.error && <Notice tone="critical" title="저장 오류">{store.error}</Notice>}
-      <SummarySection s={s} fx={fx.rate} />
-      {!s.empty && <AllocationSection s={s} />}
-      {!s.empty && <DividendSection s={s} />}
-      {!s.empty && <HistorySection p={p} s={s} />}
-      {prefs.showKrw || !s.empty ? <KrwSection s={s} p={p} fx={fx} /> : null}
-      <InputSection p={p} save={save} s={s} />
+      <SummarySection s={s} fx={fx.rate} showKrw={prefs.showKrw} />
+      {s.empty ? <InputSection p={p} save={save} s={s} /> : <PanelTabs label="내 자산 화면" tabs={tabs} initial={startedEmpty ? "input" : "holdings"} />}
       <LocalOnlyNote what="입력한 보유 종목·거래 내역·현금·메모" />
     </div>
   );
@@ -66,45 +77,54 @@ function QuoteBasis({ s }: { s: PortfolioSummary }) {
   );
 }
 
-function SummarySection({ s, fx }: { s: PortfolioSummary; fx: number | null }) {
+function SummarySection({ s, fx, showKrw }: { s: PortfolioSummary; fx: number | null; showKrw: boolean }) {
   if (s.empty)
     return (
-      <Section title="자산 요약">
-        <Empty>아직 입력한 자산이 없습니다. 아래에서 보유 종목을 입력하면 총자산과 손익을 계산합니다. 입력 전에는 어떤 금액도 표시하지 않습니다.</Empty>
-      </Section>
+      <Notice title="아직 입력한 자산이 없습니다">
+        아래에서 보유 종목을 입력하면 총자산·손익·분배금을 계산합니다. 입력 전에는 어떤 금액도 표시하지 않습니다.
+      </Notice>
     );
   const ledger = s.mode === "ledger";
+  const missing = s.missingPrices.length > 0;
   return (
-    <Section title="자산 요약" description={ledger ? "거래 내역으로 계산 (이동평균 단가)" : "간편 입력으로 계산 — 실현 손익과 실제 수령 분배금은 거래 내역 모드에서 기록할 수 있습니다"}>
-      {s.missingPrices.length > 0 && (
-        <Notice tone="warn" title="시세 없는 종목">
-          {s.missingPrices.join(", ")}의 시세가 없어 평가금액·수익률을 계산하지 않았습니다 (0으로 간주하지 않음).
-        </Notice>
+    <section className="card p-4 sm:p-6" aria-label="자산 요약">
+      {missing && (
+        <div className="mb-3">
+          <Notice tone="warn" title="시세 없는 종목">
+            {s.missingPrices.join(", ")}의 시세가 없어 평가금액·수익률을 계산하지 않았습니다 (0으로 간주하지 않음).
+          </Notice>
+        </div>
       )}
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-        <KV label="총자산" value={<Money v={s.missingPrices.length ? null : s.totalAssets} fx={fx} />} sub="보유 주식 평가금액 + 현금" />
-        <KV label="보유 주식 평가금액" value={<Money v={s.missingPrices.length ? null : s.marketValue} fx={fx} />} />
-        <KV label="현금 잔액" value={<Money v={s.cash} fx={fx} />} valueClass={s.cash < 0 ? "text-critical" : ""} />
-        <KV label="매수 원가 (현재 보유분)" value={<Money v={s.totalCost} fx={fx} />} sub="수수료 포함" />
-        <KV label="미실현 손익" value={<Money v={s.missingPrices.length ? null : s.unrealized} fx={fx} signed />} valueClass={tone(s.unrealized)} sub={s.totalCost > 0 && !s.missingPrices.length ? pct((s.unrealized / s.totalCost) * 100) : undefined} />
-        <KV label="실현 손익" value={ledger ? <Money v={s.realized} fx={fx} signed /> : "거래 내역 모드에서 계산"} valueClass={ledger ? tone(s.realized) : "text-muted text-xs"} />
-        <KV
-          label={ledger ? "총수익률" : "수익률 (미실현)"}
-          value={pct(s.totalReturnPct)}
-          valueClass={tone(s.totalReturnPct)}
-          sub={ledger ? `순납입 원금 ${usd(s.netContributions)} 대비 (입출금 제외)` : "매수 원가 대비, 현금 제외"}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-4">
+        <BigStat label="총자산" value={<Money v={missing ? null : s.totalAssets} fx={showKrw ? fx : null} />} sub={`현금 ${usd(s.cash)} 포함`} />
+        <BigStat
+          label={ledger ? "투자 손익" : "평가 손익"}
+          value={<Money v={ledger ? s.totalPnl : missing ? null : s.unrealized} fx={showKrw ? fx : null} signed />}
+          valueClass={tone(ledger ? s.totalPnl : s.unrealized)}
+          sub={ledger ? `${pct(s.totalReturnPct)} · 순납입 원금 ${usd(s.netContributions)} 대비` : `${pct(s.totalReturnPct)} · 매수 원가 대비`}
         />
-        {ledger && <KV label="투자 손익 합계" value={<Money v={s.totalPnl} fx={fx} signed />} valueClass={tone(s.totalPnl)} sub="총자산 − 순납입 원금" />}
+        <BigStat label="예상 연간 분배금" value={usd(s.expectedAnnual)} sub="최근 12개월 실제 지급 기준 추정" />
+        <BigStat label={ledger ? "실현 손익" : "매수 원가"} value={ledger ? signedUsd(s.realized) : usd(s.totalCost)} valueClass={ledger ? tone(s.realized) : ""} sub={ledger ? `미실현 ${signedUsd(missing ? null : s.unrealized)}` : `평가금액 ${usd(missing ? null : s.marketValue)}`} />
       </div>
-      <div className="mt-2">
+      <div className="mt-3 border-t border-line pt-2">
         <QuoteBasis s={s} />
       </div>
-    </Section>
+    </section>
+  );
+}
+
+function BigStat({ label, value, sub, valueClass = "" }: { label: string; value: React.ReactNode; sub?: React.ReactNode; valueClass?: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-xs text-muted">{label}</div>
+      <div className={`num mt-0.5 text-xl font-bold leading-tight sm:text-2xl ${valueClass}`}>{value}</div>
+      {sub && <div className="mt-0.5 text-[11px] text-muted">{sub}</div>}
+    </div>
   );
 }
 
 function AllocationSection({ s }: { s: PortfolioSummary }) {
-  if (s.missingPrices.length) return null;
+  if (s.missingPrices.length) return <Notice tone="warn">{s.missingPrices.join(", ")} 시세가 없어 비중을 계산하지 않았습니다.</Notice>;
   const byType = new Map<string, number>();
   for (const h of s.holdings) byType.set(categoryOf(h.symbol), (byType.get(categoryOf(h.symbol)) ?? 0) + (h.value ?? 0));
   if (s.cash > 0) byType.set("현금", s.cash);
@@ -165,7 +185,7 @@ function AllocationSection({ s }: { s: PortfolioSummary }) {
 function DividendSection({ s }: { s: PortfolioSummary }) {
   const ledger = s.mode === "ledger";
   return (
-    <Section title="배당·분배금" description="실제 받은 금액(기록)과 추정치를 나눠 표시합니다. 추정치는 확정된 현금수입이 아닙니다.">
+    <Section title="배당·분배금" description="실제 받은 금액과 추정치를 나눠 표시 (추정치는 확정 수입이 아님)">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <KV label="실제 누적 수령 (세전)" value={ledger ? usd(s.dividendsActualTotal) : "기록 없음"} sub={ledger ? "입력한 분배금 수령·재투자 기록 합계" : "거래 내역 모드에서 기록"} />
         <KV label="최근 12개월 실제 수령" value={ledger ? usd(s.dividendsActualTtm) : "기록 없음"} sub={ledger ? `세후 ${usd(s.dividendsActualTtmNet)}` : undefined} />
@@ -241,7 +261,7 @@ function HistorySection({ p, s }: { p: PortfolioData; s: PortfolioSummary }) {
   if (p.mode === "simple") {
     const snaps = p.snapshots ?? [];
     return (
-      <Section title="자산 가치 변화" description="간편 입력 모드는 이 사이트를 연 날의 평가금액만 기록합니다 (과거를 추정해 채우지 않음). 정확한 추이는 거래 내역 모드에서 볼 수 있습니다.">
+      <Section title="자산 가치 변화" description="간편 입력은 이 사이트를 연 날의 평가금액만 기록합니다 (과거를 추정해 채우지 않음)">
         {snaps.length >= 2 ? (
           <SimLineChart dates={snaps.map((x) => x.date)} lines={[{ key: "v", label: "총자산", values: snaps.map((x) => x.totalAssets), area: true }, { key: "c", label: "매수 원가", values: snaps.map((x) => x.cost), dashed: true, color: "--s2" }]} format="usd" ariaLabel="기록된 총자산 추이" />
         ) : (
@@ -251,7 +271,7 @@ function HistorySection({ p, s }: { p: PortfolioData; s: PortfolioSummary }) {
     );
   }
   return (
-    <Section title="자산 가치 변화" description="거래 내역과 일별 종가로 다시 계산한 날짜별 총자산 (현금 포함). 납입 원금 선과 비교하면 입출금과 투자 손익을 구분해 볼 수 있습니다.">
+    <Section title="자산 가치 변화" description="거래 내역과 일별 종가로 다시 계산 · 점선은 순납입 원금">
       {ser.loading && <div className="skeleton h-56" />}
       {Object.keys(ser.errors).filter((k) => k !== "SPY").length > 0 && <Notice tone="warn">일별 가격을 불러오지 못한 종목: {Object.keys(ser.errors).join(", ")}</Notice>}
       {tl && tl.dates.length >= 2 ? (
@@ -278,7 +298,7 @@ function KrwSection({ s, p, fx }: { s: PortfolioSummary; p: PortfolioData; fx: R
           모든 금액 옆에 원화 표시
         </label>
       }
-      description="기본 통화는 USD입니다. 원화 금액은 현재 환율과 거래 당시 환율을 구분해 계산합니다."
+      description="현재 환율과 거래 당시 환율을 구분해 계산"
     >
       {fx.error || !fx.rate ? (
         <Notice tone="warn">{fx.error ?? "환율을 불러오는 중입니다"} — 원화 환산을 하지 않습니다.</Notice>

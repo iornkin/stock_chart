@@ -5,7 +5,7 @@ import { changeClass, fmtPct } from "@/lib/format";
 import { perRequest } from "@/lib/page-mode";
 import MultiLineChart from "@/components/MultiLineChart";
 import Tabs from "@/components/Tabs";
-import { Empty, Notice, Section } from "@/components/ui";
+import { Empty, Fold, Notice, PageHeader, Section } from "@/components/ui";
 
 export const metadata = { title: "레버리지 ETF 분석" };
 
@@ -23,15 +23,20 @@ function Explainer() {
     return { ...r, end: v, total: v - 100 };
   });
   return (
-    <Section title="하루 목표와 장기 성과는 다릅니다" description="아래 표는 이해를 돕기 위한 가상의 계산 예시입니다 (실제 데이터 아님).">
+    <Fold summary="레버리지 ETF 는 왜 기간 수익률 × 배수가 아닌가요? (예시)">
+      <p className="mb-3 text-xs text-muted">아래 표는 이해를 돕기 위한 가상의 계산 예시입니다 (실제 데이터 아님).</p>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="prose-ko-sm flex flex-col gap-2">
           <p>
             레버리지 ETF 는 <strong className="text-ink">하루 수익률</strong>의 2배·3배를 목표로 매일 다시 맞춥니다. 그래서 이틀 이상 보유하면 &lsquo;기간 수익률 × 배수&rsquo;와 결과가 달라집니다.
           </p>
           <ul className="list-disc pl-5">
-            <li>오르내림을 반복하는 장에서는 단순 배수보다 <strong className="text-ink">손실이 커지기</strong> 쉽습니다 (오른쪽 예시).</li>
-            <li>한 방향으로 꾸준히 움직이는 장에서는 단순 배수보다 결과가 <strong className="text-ink">커질</strong> 수도 있습니다.</li>
+            <li>
+              오르내림을 반복하는 장에서는 단순 배수보다 <strong className="text-ink">손실이 커지기</strong> 쉽습니다 (오른쪽 예시).
+            </li>
+            <li>
+              한 방향으로 꾸준히 움직이는 장에서는 단순 배수보다 결과가 <strong className="text-ink">커질</strong> 수도 있습니다.
+            </li>
             <li>운용 보수·파생상품 비용도 매일 빠집니다.</li>
           </ul>
           <p className="text-xs text-muted">아래 실제 데이터의 &lsquo;배수 대비&rsquo; 값은 실제 수익률 − (1배 ETF 수익률 × 배수)입니다.</p>
@@ -61,7 +66,7 @@ function Explainer() {
           </table>
         </div>
       </div>
-    </Section>
+    </Fold>
   );
 }
 
@@ -72,7 +77,11 @@ function GroupPanel({ a }: { a: LeverageAnalysis }) {
   return (
     <div className="flex flex-col gap-5">
       <p className="text-sm text-ink-2">
-        공통 비교 기간 <strong className="num text-ink">{a.start} ~ {a.end}</strong> ({a.days.toLocaleString()}거래일) · 기준 1배 ETF <strong className="text-ink">{a.base}</strong> · 분배금 재투자 총수익 기준
+        공통 비교 기간{" "}
+        <strong className="num text-ink">
+          {a.start} ~ {a.end}
+        </strong>{" "}
+        ({a.days.toLocaleString()}거래일) · 기준 1배 ETF <strong className="text-ink">{a.base}</strong> · 분배금 재투자 총수익 기준
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -148,7 +157,9 @@ function GroupPanel({ a }: { a: LeverageAnalysis }) {
 
       <div>
         <p className="mb-1 text-sm font-semibold">급락 구간의 손실과 회복</p>
-        <p className="mb-2 text-xs text-muted">{a.base} 가 고점 대비 15% 이상 하락한 구간. 손실은 {a.base} 의 고점일 → 저점일 사이 각 종목의 변화, 회복은 각 종목이 그 고점일 수준을 다시 넘은 날입니다.</p>
+        <p className="mb-2 text-xs text-muted">
+          {a.base} 가 고점 대비 15% 이상 하락한 구간. 손실은 {a.base} 의 고점일 → 저점일 사이 각 종목의 변화, 회복은 각 종목이 그 고점일 수준을 다시 넘은 날입니다.
+        </p>
         {a.episodes.length ? (
           <div className="overflow-x-auto">
             <table className="table-basic">
@@ -281,25 +292,19 @@ export default async function LeveragePage() {
     .map((g) => analyzeLeverageGroup(g))
     .filter((a): a is LeverageAnalysis => a !== null);
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">레버리지 ETF 분석</h1>
-        <p className="mt-1 text-sm text-ink-2">같은 지수를 따르는 1배·2배·3배 ETF 의 실제 성과를 같은 기간으로 비교합니다. 과거 데이터 분석이며 미래 수익률을 보장하지 않습니다.</p>
+    <div className="flex flex-col">
+      <PageHeader title="레버리지 ETF" description="같은 지수를 따르는 1배·2배·3배 ETF 의 실제 성과를 같은 기간으로 비교합니다. 과거 기록이며 미래 수익을 보장하지 않습니다." />
+      <div className="flex flex-col gap-5">
+        <Section title="실제 성과 비교">
+          {analyses.length ? (
+            <Tabs tabs={analyses.map((a) => ({ key: a.group.key, label: `${a.group.title} · ${a.members.map((m) => m.symbol).join("/")}` }))} panels={Object.fromEntries(analyses.map((a) => [a.group.key, <GroupPanel key={a.group.key} a={a} />]))} />
+          ) : (
+            <Empty>비교에 필요한 일봉 데이터가 아직 수집되지 않았습니다.</Empty>
+          )}
+        </Section>
+        <Explainer />
+        <p className="text-xs text-muted">종목 구성은 설정 파일의 기초지수·레버리지 배수 정보로 정합니다 ({getInstrument("TQQQ")?.underlying ?? "Nasdaq-100"} 등).</p>
       </div>
-      <Explainer />
-      <Section title="실제 성과 비교">
-        {analyses.length ? (
-          <Tabs
-            tabs={analyses.map((a) => ({ key: a.group.key, label: `${a.group.title} · ${a.members.map((m) => m.symbol).join("/")}` }))}
-            panels={Object.fromEntries(analyses.map((a) => [a.group.key, <GroupPanel key={a.group.key} a={a} />]))}
-          />
-        ) : (
-          <Empty>비교에 필요한 일봉 데이터가 아직 수집되지 않았습니다.</Empty>
-        )}
-      </Section>
-      <p className="text-xs text-muted">
-        종목 구성은 설정 파일의 기초지수·레버리지 배수 정보로 정합니다 ({getInstrument("TQQQ")?.underlying ?? "Nasdaq-100"} 등).
-      </p>
     </div>
   );
 }

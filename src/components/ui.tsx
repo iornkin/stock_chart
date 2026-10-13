@@ -3,6 +3,32 @@ import type { ReactNode } from "react";
 import { changeClass, fmtPct, fmtSigned } from "@/lib/format";
 import { KIND_DESC, KIND_LABEL, type StatementKind } from "@/lib/briefing/types";
 
+/** 화면 제목 (모든 화면 같은 모양: 제목 + 한 줄 설명 + 오른쪽 버튼) */
+export function PageHeader({ title, description, right }: { title: ReactNode; description?: ReactNode; right?: ReactNode }) {
+  return (
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0">
+        <h1 className="text-[22px] font-bold leading-tight tracking-tight sm:text-2xl">{title}</h1>
+        {description && <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-ink-2">{description}</p>}
+      </div>
+      {right}
+    </div>
+  );
+}
+
+/** 접어 두는 설명 (계산 기준·자세한 안내) */
+export function Fold({ summary, children, open = false }: { summary: ReactNode; children: ReactNode; open?: boolean }) {
+  return (
+    <details open={open} className="group rounded-lg border border-line bg-surface px-4 py-3">
+      <summary className="flex items-center justify-between gap-2 text-sm font-semibold text-ink-2">
+        {summary}
+        <span aria-hidden className="text-xs text-muted transition-transform group-open:rotate-180">▾</span>
+      </summary>
+      <div className="mt-3 text-sm leading-relaxed text-ink-2">{children}</div>
+    </details>
+  );
+}
+
 export function Section({ title, right, children, id, description }: { title: ReactNode; right?: ReactNode; children: ReactNode; id?: string; description?: ReactNode }) {
   return (
     <section id={id} className="card p-4 sm:p-6">

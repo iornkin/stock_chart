@@ -591,8 +591,30 @@ export default function BriefingView({ b }: { b: SymbolBriefing }) {
 
 // ─────────────────────────────── 시장 브리핑 ───────────────────────────────
 
-export function MarketBriefingView({ b }: { b: MarketBriefing }) {
+export function MarketBriefingView({ b, compact = false }: { b: MarketBriefing; compact?: boolean }) {
   const prefix = "b-MARKET";
+  if (compact)
+    // 목록 화면용 요약: 헤드라인 + 첫 부분만 (전체는 시장 브리핑 화면에서)
+    return (
+      <article className="flex flex-col gap-5">
+        <header className="flex flex-col gap-1">
+          <p className="text-xs text-muted">
+            {b.sessionLabel} · 생성 {formatEt(b.generatedAt)}
+          </p>
+          <p className="text-[15px] font-semibold leading-snug">{b.headline}</p>
+        </header>
+        {(b.ai ? [{ key: "ai", title: "AI 분석", statements: b.ai.paragraphs, table: undefined }] : b.sections.slice(0, 1)).map((s) => (
+          <Block key={s.key} title={s.title}>
+            <Statements items={s.statements} prefix={prefix} />
+            {s.table && (
+              <div className="mt-2">
+                <KvTable rows={s.table} />
+              </div>
+            )}
+          </Block>
+        ))}
+      </article>
+    );
   return (
     <article className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">

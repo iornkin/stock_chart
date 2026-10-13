@@ -334,13 +334,15 @@ details > summary::-webkit-details-marker {
     background: var(--surface-2);
     padding: 2px;
   }
-  .seg > button {
+  .seg > button,
+  .seg > a {
     border-radius: 6px;
     padding: 0.25rem 0.65rem;
     font-size: 13px;
     color: var(--text-2);
   }
-  .seg > button[aria-pressed="true"] {
+  .seg > button[aria-pressed="true"],
+  .seg > a[aria-current="page"] {
     background: var(--surface);
     color: var(--text);
     font-weight: 600;

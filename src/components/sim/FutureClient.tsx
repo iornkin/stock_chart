@@ -26,6 +26,7 @@ import { Disclaimer, Field, parseNum, pct, rowsFrom, rowsProblem, rowsToItems, S
 import { SimLineChart, SERIES_VARS } from "./charts";
 import PortfolioInputs, { defaultPortfolios, type PortfolioInput } from "./PortfolioInputs";
 import BarChartSvg from "@/components/BarChartSvg";
+import PanelTabs from "@/components/PanelTabs";
 
 const PERIODS = [
   { m: 1, l: "1개월" },
@@ -132,12 +133,11 @@ export default function FutureClient() {
 
   return (
     <div className="flex flex-col gap-5">
-      <Notice tone="warn" title="예측이 아닌 시나리오 계산입니다">미래의 가격과 분배금은 확정할 수 없습니다. 아래 결과는 입력한 가정(또는 과거 수익률 분포)을 그대로 적용한 계산이며, 수익을 보장하지 않습니다.</Notice>
       <Section title="1. 포트폴리오" right={!mine.empty && !mine.missingPrices.length ? <button type="button" className="btn btn-sm" onClick={loadMine}>내 자산에서 불러오기</button> : undefined}>
         <PortfolioInputs list={list} onChange={setList} max={3} />
       </Section>
 
-      <Section title="2. 기간과 투자 조건" description="시작 시점은 다음 달 초입니다. 기간은 직접 입력할 수 있습니다.">
+      <Section title="2. 기간과 투자 조건" description="다음 달 초부터 계산합니다">
         <div className="flex flex-wrap items-end gap-3">
           <Field label="기간">
             <div className="seg" role="group" aria-label="기간">
@@ -185,16 +185,23 @@ export default function FutureClient() {
               ))}
             </select>
           </Field>
-          <Field label="거래 비용 (%)">
-            <input className="input" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} aria-label="거래 비용" />
-          </Field>
-          <Field label="분배금 세금 (%)">
-            <input className="input" inputMode="decimal" value={tax} onChange={(e) => setTax(e.target.value)} aria-label="분배금 세금" />
-          </Field>
-          <Field label="추가 연간 비용 (%)" hint="가정 수익률에 보수가 이미 들어 있으면 0">
-            <input className="input" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} aria-label="추가 연간 비용" />
-          </Field>
         </div>
+        <details className="mt-4 rounded-lg border border-line px-4 py-3">
+          <summary className="text-sm font-semibold text-ink-2">
+            세금·비용 <span className="ml-1 text-xs font-normal text-muted">거래 비용 {cost}% · 분배금 세금 {tax}% · 추가 비용 {fee}%</span>
+          </summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <Field label="거래 비용 (%)">
+              <input className="input" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} aria-label="거래 비용" />
+            </Field>
+            <Field label="분배금 세금 (%)">
+              <input className="input" inputMode="decimal" value={tax} onChange={(e) => setTax(e.target.value)} aria-label="분배금 세금" />
+            </Field>
+            <Field label="추가 연간 비용 (%)" hint="가정 수익률에 보수가 이미 들어 있으면 0">
+              <input className="input" inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} aria-label="추가 연간 비용" />
+            </Field>
+          </div>
+        </details>
       </Section>
 
       <div role="tablist" aria-label="시뮬레이션 방식" className="flex gap-1 border-b border-line">
@@ -214,8 +221,8 @@ export default function FutureClient() {
             title="3. 수익률 가정"
             description={
               mode === "total"
-                ? "총수익률 기준: 모든 종목의 연 총수익률을 같게 두고, 가격 수익률 = 총수익률 − 분배금 수익률로 정합니다. 분배금이 높다고 총수익이 높아지지 않는 중립적 가정입니다."
-                : "가격 수익률 기준: 모든 종목의 가격이 같은 비율로 오른다고 보고 분배금을 더합니다. 분배금이 높은 종목이 유리하게 나오는 가정이니 주의하세요."
+                ? "총수익률 고정: 가격 수익률 = 총수익률 − 분배금 수익률 (분배금이 높다고 유리해지지 않는 중립 가정)"
+                : "가격 수익률 고정: 모든 종목 가격이 같은 비율로 오르고 분배금을 더함 (분배금 높은 종목이 유리해지는 가정)"
             }
           >
             <div className="flex flex-wrap items-end gap-3">
@@ -228,8 +235,10 @@ export default function FutureClient() {
                 </Field>
               ))}
             </div>
-            <p className="mt-2 text-[11px] text-muted">기본값 2% / 5% / 8%는 계산을 위한 임의의 가정이며 예측값이 아닙니다. 직접 바꿔 쓰세요.</p>
-            <div className="mt-4 overflow-x-auto">
+            <p className="mt-2 text-[11px] text-muted">기본값 2% / 5% / 8%는 계산용 가정이며 예측값이 아닙니다.</p>
+            <details className="mt-4 rounded-lg border border-line px-4 py-3">
+              <summary className="text-sm font-semibold text-ink-2">종목별 가정 (분배금 수익률·지급 월·사용자 지정 가격 수익률)</summary>
+            <div className="mt-3 overflow-x-auto">
               <table className="table-basic">
                 <thead>
                   <tr>
@@ -270,11 +279,12 @@ export default function FutureClient() {
               ))}
               <span className="text-muted">(과거 실적이며 미래를 뜻하지 않음. 레버리지 ETF 는 과거 값이 매우 클 수 있음)</span>
             </div>
+            </details>
           </Section>
 
           <ScenarioResults results={results} scenario={scenario} setScenario={setScenario} focus={focus} setFocus={setFocus} reinvest={reinvest} months={months} onSave={(title, summary) => runs.add({ kind: "future", title, summary })} />
           <Disclaimer>
-            계산 기준: 매달 평가금액 × (1 + 연 가격 수익률)^(1/12). 분배금 = 그 달 평가금액 × 연 분배금 수익률 × (그 달 지급 비중). 가격 수익률은 분배금을 뺀 가격 변화이므로 분배금을 따로 더해도 이중 계산이 아닙니다. 세금은 분배금에서 원천징수, 거래 비용은 매수·재투자·리밸런싱 금액에 부과. 분배금은 바뀔 수 있으며 높은 분배금 수익률이 높은 총수익률을 뜻하지 않습니다.
+            예측이 아닌 시나리오 계산이며 수익을 보장하지 않습니다. 계산 기준: 매달 평가금액 × (1 + 연 가격 수익률)^(1/12). 분배금 = 그 달 평가금액 × 연 분배금 수익률 × (그 달 지급 비중). 가격 수익률은 분배금을 뺀 가격 변화이므로 분배금을 따로 더해도 이중 계산이 아닙니다. 세금은 분배금에서 원천징수, 거래 비용은 매수·재투자·리밸런싱 금액에 부과. 분배금은 바뀔 수 있으며 높은 분배금 수익률이 높은 총수익률을 뜻하지 않습니다.
           </Disclaimer>
         </>
       ) : (
@@ -292,20 +302,8 @@ function ScenarioResults({ results, scenario, setScenario, focus, setFocus, rein
   const ok = results as { p: PortfolioInput; per: Record<ScenarioId, { holdings: FutureHolding[]; res: FutureResult; alt: FutureResult }> }[];
   const f = ok[Math.min(focus, ok.length - 1)];
   const sel = f.per[scenario].res;
-  return (
+  const scenarioTable = (
     <>
-      <Section
-        title={`4. 시나리오별 결과 — ${f.p.key}. ${f.p.name}`}
-        description={`${months}개월 뒤 기준`}
-        right={
-          <div className="flex flex-wrap gap-2">
-            <Seg label="포트폴리오" value={focus} onChange={setFocus} options={ok.map((r, i) => ({ v: i, l: r.p.key }))} />
-            <button type="button" className="btn btn-sm" onClick={() => onSave(`미래 시나리오 ${months}개월 · ${f.p.name}`, SCEN.map((s) => ({ label: `${SCEN_KO[s]} 예상 자산`, value: usd(f.per[s].res.finalValue, 0) })))}>
-              결과 저장
-            </button>
-          </div>
-        }
-      >
         <div className="overflow-x-auto">
           <table className="table-basic min-w-[560px]">
             <thead>
@@ -359,18 +357,25 @@ function ScenarioResults({ results, scenario, setScenario, focus, setFocus, rein
             </tbody>
           </table>
         </div>
-      </Section>
-
-      <Section title="월별 예상 자산" description="점선은 누적 납입 원금">
+    </>
+  );
+  const monthlyChart = (
+    <div>
+      <p className="mb-2 text-xs text-ink-2">점선은 누적 납입 원금</p>
         <SimLineChart
           dates={f.per.neutral.res.months.map((m) => m.ym)}
           lines={[...SCEN.map((s, i) => ({ key: s, label: SCEN_KO[s], values: f.per[s].res.months.map((m) => m.value), color: SERIES_VARS[i] })), { key: "c", label: "납입 원금", values: f.per.neutral.res.months.map((m) => m.contributed), dashed: true, color: "--axis" }]}
           format="usd"
           ariaLabel="시나리오별 월별 예상 자산"
         />
-      </Section>
-
-      <Section title="예상 월별·연간 분배금" right={<Seg label="시나리오" value={scenario} onChange={setScenario} options={SCEN.map((s) => ({ v: s, l: SCEN_KO[s] }))} />} description="과거 실제 지급 월 비중대로 배분한 가정치입니다 (세전).">
+    </div>
+  );
+  const incomePanel = (
+    <div>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-ink-2">과거 실제 지급 월 비중대로 배분한 가정치 (세전)</p>
+        <Seg label="시나리오" value={scenario} onChange={setScenario} options={SCEN.map((s) => ({ v: s, l: SCEN_KO[s] }))} />
+      </div>
         <BarChartSvg points={sel.months.map((m) => ({ label: m.ym, value: m.incomeGross, sub: `세후 ${usd(m.incomeNet)}` }))} valueFormat="usd2" ariaLabel="예상 월별 분배금" />
         <div className="mt-3 overflow-x-auto">
           <table className="table-basic">
@@ -394,9 +399,14 @@ function ScenarioResults({ results, scenario, setScenario, focus, setFocus, rein
             </tbody>
           </table>
         </div>
-      </Section>
-
-      <Section title={`포트폴리오 비교 — ${SCEN_KO[scenario]} 가정`}>
+    </div>
+  );
+  const comparePanel = (
+    <div>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-ink-2">같은 기간·조건, {SCEN_KO[scenario]} 가정</p>
+        <Seg label="비교 시나리오" value={scenario} onChange={setScenario} options={SCEN.map((s) => ({ v: s, l: SCEN_KO[s] }))} />
+      </div>
         <div className="overflow-x-auto">
           <table className="table-basic">
             <thead>
@@ -429,8 +439,50 @@ function ScenarioResults({ results, scenario, setScenario, focus, setFocus, rein
             </tbody>
           </table>
         </div>
-      </Section>
-    </>
+    </div>
+  );
+  return (
+    <Section
+      title="4. 결과"
+      description={`${months}개월 뒤 기준 · 예측이 아닌 가정 계산`}
+      right={
+        <div className="flex flex-wrap gap-2">
+          <Seg label="포트폴리오" value={focus} onChange={setFocus} options={ok.map((r, i) => ({ v: i, l: r.p.key }))} />
+          <button type="button" className="btn btn-sm" onClick={() => onSave(`미래 시나리오 ${months}개월 · ${f.p.name}`, SCEN.map((s) => ({ label: `${SCEN_KO[s]} 예상 자산`, value: usd(f.per[s].res.finalValue, 0) })))}>
+            결과 저장
+          </button>
+        </div>
+      }
+    >
+      <p className="mb-3 text-sm font-semibold">
+        {f.p.key}. {f.p.name}
+      </p>
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {SCEN.map((sc, i) => {
+          const r = f.per[sc].res;
+          return (
+            <div key={sc} className="rounded-xl border border-line p-3.5">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-ink-2">
+                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: `var(${SERIES_VARS[i]})` }} />
+                {SCEN_KO[sc]}
+              </p>
+              <p className="num mt-1 text-xl font-bold">{usd(r.finalValue, 0)}</p>
+              <p className={`num text-xs font-semibold ${tone(r.returnPct)}`}>{pct(r.returnPct, 1)}</p>
+              <p className="num mt-1 text-[11px] text-muted">월 분배금(세후) {usd(r.avgMonthlyIncomeNet, 0)}</p>
+            </div>
+          );
+        })}
+      </div>
+      <PanelTabs
+        label="시나리오 결과"
+        tabs={[
+          { key: "table", label: "시나리오 비교", content: scenarioTable },
+          { key: "chart", label: "월별 자산", content: monthlyChart },
+          { key: "income", label: "분배금", content: incomePanel },
+          { key: "compare", label: "포트폴리오 비교", content: comparePanel },
+        ]}
+      />
+    </Section>
   );
 }
 
