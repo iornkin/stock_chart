@@ -12,7 +12,7 @@ import { env } from "../env";
 import { BROWSER_UA, ProviderError, request, requestJson } from "../http";
 import type { Bar, Interval, NewsItem, Quote, Split } from "../types";
 import { etDate } from "../time";
-import { newsId } from "../news-utils";
+import { newsId, safeImageUrl } from "../news-utils";
 
 const P = "yahoo";
 
@@ -306,7 +306,15 @@ interface V1Search {
     providerPublishTime?: number;
     type?: string;
     relatedTickers?: string[];
+    thumbnail?: { resolutions?: { url?: string; width?: number; height?: number; tag?: string }[] };
   }>;
+}
+
+/** 목록용으로 알맞은 크기(가로 140~480px)의 썸네일을 고른다 */
+function pickThumb(t: { resolutions?: { url?: string; width?: number }[] } | undefined): string | null {
+  const rs = (t?.resolutions ?? []).filter((r) => r.url);
+  const fit = rs.filter((r) => (r.width ?? 0) >= 140 && (r.width ?? 0) <= 480).sort((a, b) => (a.width ?? 0) - (b.width ?? 0))[0];
+  return safeImageUrl((fit ?? rs.sort((a, b) => (a.width ?? 0) - (b.width ?? 0))[0])?.url);
 }
 
 export function parseSearchNews(json: V1Search, fetchedAt: number): NewsItem[] {
@@ -323,6 +331,7 @@ export function parseSearchNews(json: V1Search, fetchedAt: number): NewsItem[] {
       provider: "Yahoo Finance",
       fetchedAt,
       related: (n.relatedTickers ?? []).map((t) => t.toUpperCase()),
+      image: pickThumb(n.thumbnail),
     });
   }
   return out;

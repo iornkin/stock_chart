@@ -1,15 +1,15 @@
 /** 공용 UI 조각 (서버·클라이언트 공용, 상태 없음) */
 import type { ReactNode } from "react";
 import { changeClass, fmtPct, fmtSigned } from "@/lib/format";
-import { KIND_LABEL, type StatementKind } from "@/lib/briefing/types";
+import { KIND_DESC, KIND_LABEL, type StatementKind } from "@/lib/briefing/types";
 
 export function Section({ title, right, children, id, description }: { title: ReactNode; right?: ReactNode; children: ReactNode; id?: string; description?: ReactNode }) {
   return (
-    <section id={id} className="card p-4 sm:p-5">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+    <section id={id} className="card p-4 sm:p-6">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="text-base font-semibold">{title}</h2>
-          {description && <p className="mt-0.5 text-xs text-muted">{description}</p>}
+          <h2 className="text-[17px] font-bold tracking-tight">{title}</h2>
+          {description && <p className="mt-1 text-xs leading-relaxed text-muted">{description}</p>}
         </div>
         {right}
       </div>
@@ -52,7 +52,11 @@ const KIND_STYLE: Record<StatementKind, string> = {
 };
 
 export function KindBadge({ kind }: { kind: StatementKind }) {
-  return <span className={`inline-block shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${KIND_STYLE[kind]}`}>{KIND_LABEL[kind]}</span>;
+  return (
+    <span title={KIND_DESC[kind]} className={`mt-[3px] inline-flex h-[18px] min-w-[30px] shrink-0 items-center justify-center rounded px-1 text-[10px] font-semibold ${KIND_STYLE[kind]}`}>
+      {KIND_LABEL[kind]}
+    </span>
+  );
 }
 
 export function Notice({ tone = "info", title, children }: { tone?: "info" | "warn" | "critical"; title?: ReactNode; children: ReactNode }) {

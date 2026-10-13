@@ -6,7 +6,7 @@
  */
 import { env } from "../env";
 import { ProviderError, requestJson } from "../http";
-import { newsId } from "../news-utils";
+import { newsId, safeImageUrl } from "../news-utils";
 import type { NewsItem } from "../types";
 
 const P = "finnhub";
@@ -29,6 +29,7 @@ interface FinnhubNews {
   source?: string;
   summary?: string;
   url?: string;
+  image?: string;
 }
 
 export function parseFinnhubNews(rows: FinnhubNews[], fetchedAt: number): NewsItem[] {
@@ -44,6 +45,7 @@ export function parseFinnhubNews(rows: FinnhubNews[], fetchedAt: number): NewsIt
       publishedAt: r.datetime * 1000,
       provider: "Finnhub",
       fetchedAt,
+      image: safeImageUrl(r.image),
       related: (r.related ?? "")
         .split(",")
         .map((s) => s.trim().toUpperCase())

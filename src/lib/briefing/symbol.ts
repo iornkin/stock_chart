@@ -22,6 +22,8 @@ import { addDays, etDate, etTime, formatEt } from "../time";
 import { fmtCompact, fmtDividend, fmtPct, fmtPrice, fmtSigned, fmtUsd, fmtUsdCompact, isNum } from "../format";
 import type { Bar, NewsItem } from "../types";
 import { generalRisks } from "./risks";
+import { compareRows, priceSignalChanges, signalStateAt, sortChanges, type ChangeItem } from "./signals";
+import { buildJudgment } from "./judgment";
 import type { BriefingNews, Evidence, KeyValue, SessionType, Statement, SymbolBriefing, UpcomingItem } from "./types";
 
 export interface DayData {
@@ -121,6 +123,7 @@ function toBriefingNews(n: NewsItem, evidenceId: string, reason?: string): Brief
     publisher: n.publisher,
     provider: n.provider,
     url: n.url,
+    image: n.image ?? null,
     reason: reason ?? n.reason ?? "",
     matchType: n.matchType ?? null,
     duplicates: n.duplicates ?? [],
@@ -444,6 +447,7 @@ export function buildSymbolBriefing(symbol: string, session: SessionType, tradeD
   const closes = hist.map((d) => d.bar.c);
   if (session === "intraday" && dd && hist[hist.length - 1]?.date !== tradeDate) closes.push(dd.close);
   let rsiV: number | null = null;
+  let techId = "";
   if (closes.length >= 30) {
     const lastC = closes[closes.length - 1];
     const s20 = last(sma(closes, 20));
@@ -459,6 +463,7 @@ export function buildSymbolBriefing(symbol: string, session: SessionType, tradeD
     const bu = last(bb.upper);
     const bl = last(bb.lower);
     const tId = ev.add("T", { type: "indicator", label: `${symbol} 일봉 기술적 지표`, value: `종가 ${fmtPrice(lastC)}`, source: "사이트 계산 (일봉 기준)", asOf: tradeDate });
+    techId = tId;
     techValues.push({ label: "SMA 20 / 50 / 200", value: `${fmtPrice(s20)} / ${fmtPrice(s50)} / ${fmtPrice(s200)}`, kind: "calc" });
     techValues.push({ label: "EMA 20", value: fmtPrice(e20), kind: "calc" });
     techValues.push({ label: "RSI(14)", value: rsiV !== null ? rsiV.toFixed(1) : "-", kind: "calc" });
@@ -707,6 +712,125 @@ export function buildSymbolBriefing(symbol: string, session: SessionType, tradeD
     }
   }
 
+  // ─────────────── 8. 전일 대비 새 변화 · 종합 판단 ───────────────
+  const series = daily.filter((d) => d.date <= tradeDate);
+  if (session === "intraday" && dd && series[series.length - 1]?.date !== tradeDate && isNum(dd.open) && isNum(dd.high) && isNum(dd.low)) {
+    series.push({ date: tradeDate, bar: { t: Math.floor((dd.asOf ?? now) / 1000), o: dd.open, h: dd.high, l: dd.low, c: dd.close, v: isNum(dd.volume) ? dd.volume : 0 } });
+  }
+  const curState = series[series.length - 1]?.date === tradeDate ? signalStateAt(series, series.length - 1) : null;
+  const prevState = curState ? signalStateAt(series, series.length - 2) : null;
+  const evIds = { price: pId ? [pId] : [], volume: vId ? [vId] : [], tech: techId ? [techId] : [] };
+  const changeItems: ChangeItem[] = [];
+  if (curState && session !== "non_trading") changeItems.push(...priceSignalChanges(prevState, curState, evIds));
+  if (dd && dd.changePct !== null && bmPrimary && session !== "non_trading") {
+    if (inst.leverage) {
+      const exp = bmPrimary.change * inst.leverage;
+      const gap = dd.changePct - exp;
+      if (Math.abs(gap) >= 1) {
+        changeItems.push({
+          short: `일일 목표와 ${fmtSigned(gap)}%p 차이`,
+          text: `오늘 등락률 ${fmtPct(dd.changePct)}는 기준 지수 × ${inst.leverage}(${fmtPct(exp)})와 ${fmtSigned(gap)}%p 차이가 납니다. 종가 산정 시점·운용 비용 등으로 생길 수 있으며 원인을 특정하지 않습니다.`,
+          kind: "calc",
+          importance: 2,
+          tag: "relative",
+          direction: "neutral",
+          evidence: [pId, bmPrimary.id],
+        });
+      }
+    } else {
+      const gap = dd.changePct - bmPrimary.change;
+      if (Math.abs(gap) >= 2) {
+        changeItems.push({
+          short: `${bmPrimary.symbol} 대비 ${fmtSigned(gap)}%p`,
+          text: `기준 지수 ${marketSymbolName(bmPrimary.symbol)}(${fmtPct(bmPrimary.change)})보다 ${fmtSigned(gap)}%p ${gap > 0 ? "강하게" : "약하게"} 움직였습니다.`,
+          kind: "calc",
+          importance: 2,
+          tag: "relative",
+          direction: gap > 0 ? "up" : "down",
+          evidence: [pId, bmPrimary.id],
+        });
+      }
+    }
+  }
+  if (directNews.length) {
+    changeItems.push({
+      short: `새 관련 기사 ${directNews.length}건`,
+      text: `직전 장 마감 이후 관련 기사 ${directNews.length}건이 새로 확인되었습니다. 대표 기사: "${directNews[0].title}" (${directNews[0].publisher ?? directNews[0].provider}). 기사와 주가 움직임의 인과관계는 확인되지 않았습니다.`,
+      kind: "fact",
+      importance: directNews.length >= 3 ? 3 : 2,
+      tag: "news",
+      direction: "neutral",
+      evidence: directNews.slice(0, 3).map((n) => n.evidenceId),
+    });
+  }
+  const prevSession = previousTradingDay(tradeDate);
+  const divsSorted = [...divs].sort((a, b) => a.exDate.localeCompare(b.exDate));
+  const exToday = divsSorted.find((d) => d.exDate === tradeDate);
+  if (exToday && session !== "non_trading") {
+    const id = ev.add("D", { type: "dividend", label: `${symbol} 배당락`, value: `${fmtDividend(exToday.amount)} (배당락일 ${exToday.exDate})`, source: exToday.sources.join(", ") });
+    changeItems.push({ short: `오늘 배당락 ${fmtDividend(exToday.amount)}`, text: `${tradeDate}은 ${word} 배당락일입니다(주당 ${fmtDividend(exToday.amount)}). 당일 등락률에는 ${word}만큼의 가격 조정이 포함됩니다.`, kind: "fact", importance: 3, tag: "dividend", direction: "neutral", evidence: [id] });
+  }
+  const declared = divsSorted.filter((d) => d.declaredDate && d.declaredDate > prevSession && d.declaredDate <= today && d.exDate !== tradeDate);
+  for (const d of declared.slice(-1)) {
+    const before = divsSorted.filter((x) => x.exDate < d.exDate).slice(-1)[0];
+    const chg = before ? (d.amount / before.amount - 1) * 100 : null;
+    const id = ev.add("D", { type: "dividend", label: `${symbol} 새 ${word} 발표`, value: `${fmtDividend(d.amount)} (발표 ${d.declaredDate}, 배당락 ${d.exDate})`, source: d.sources.join(", ") });
+    changeItems.push({
+      short: `${word} 발표 ${fmtDividend(d.amount)}${chg === null ? "" : Math.abs(chg) < 0.05 ? " (직전과 같음)" : ` (${fmtPct(chg, 1)})`}`,
+      text: `새 ${word}이 발표되었습니다: 주당 ${fmtDividend(d.amount)}, 배당락일 ${d.exDate}, 지급일 ${d.payDate ?? "미제공"}${chg === null ? "" : Math.abs(chg) < 0.05 ? ` — 직전 지급(${fmtDividend(before?.amount)})과 같은 금액` : ` — 직전 지급(${fmtDividend(before?.amount)}) 대비 ${fmtPct(chg)}`}.`,
+      kind: "fact",
+      importance: 3,
+      tag: "dividend",
+      direction: chg === null || Math.abs(chg) < 0.01 ? "neutral" : chg > 0 ? "up" : "down",
+      evidence: [id],
+    });
+  }
+  const earnNear = readEvents(prevSession, addDays(tradeDate, 7), { kinds: ["earnings"], symbols: [symbol] });
+  const eToday = earnNear.find((e) => e.date === tradeDate);
+  const eSoon = earnNear.find((e) => e.date > tradeDate && e.date > addDays(prevSession, 7));
+  if (eToday && session !== "non_trading") {
+    changeItems.push({ short: "실적 발표일", text: `${tradeDate} 실적 발표일입니다${eToday.timeHint ? ` (${eToday.timeHint})` : ""}. 발표 내용은 기업 공시와 관련 기사에서 확인하세요.`, kind: "fact", importance: 3, tag: "event", direction: "neutral", evidence: [] });
+  } else if (eSoon) {
+    changeItems.push({ short: `실적 발표 ${eSoon.date}`, text: `실적 발표(${eSoon.date}${eSoon.timeHint ? `, ${eSoon.timeHint}` : ""})가 7일 이내로 다가왔습니다.`, kind: "fact", importance: 2, tag: "event", direction: "neutral", evidence: [] });
+  }
+  const changes: NonNullable<SymbolBriefing["changes"]> = {
+    comparedWith: prevState?.date ?? null,
+    items: sortChanges(changeItems).slice(0, 8),
+    table: curState && prevState && session !== "non_trading" ? compareRows(prevState, curState) : [],
+    note: changeItems.length
+      ? null
+      : session === "non_trading"
+        ? "휴장일이라 새 가격 변화가 없고, 새로 확인된 뉴스·일정 변화도 없습니다."
+        : "전일 대비 새로 확인된 중요한 변화가 없습니다.",
+  };
+
+  const bench20 = bmPrimary ? pctChangeOver(dailyFor(bmPrimary.symbol), tradeDate, 20) : null;
+  let incomeView: { ttmYield: number | null; ttmChangePct: number | null; word: string } | null = null;
+  if (["income", "dividend_growth"].includes(inst.category) && divsSorted.length) {
+    const s = summarizeDividends(divsSorted, tradeDate, price);
+    const y1 = addDays(tradeDate, -365);
+    const y2 = addDays(tradeDate, -730);
+    const sumIn = (a: string, b: string) => divsSorted.filter((d) => d.exDate > a && d.exDate <= b).reduce((x, d) => x + d.amount, 0);
+    const recent = sumIn(y1, tradeDate);
+    const before = sumIn(y2, y1);
+    const longEnough = divsSorted[0].exDate <= addDays(y2, 45);
+    incomeView = { ttmYield: s.ttmYield, ttmChangePct: longEnough && before > 0 && recent > 0 ? (recent / before - 1) * 100 : null, word };
+  }
+  const nextEarnInfo = evs[0] ? { date: evs[0].date, daysAway: Math.round((Date.parse(evs[0].date) - Date.parse(today)) / 86400000) } : null;
+  const nextEx = divsSorted.find((d) => d.exDate > tradeDate);
+  const judgment = buildJudgment({
+    symbol,
+    cur: curState,
+    bench20: bmPrimary && bench20 !== null ? { symbol: bmPrimary.symbol, ret: bench20 } : null,
+    leverage: inst.leverage,
+    coveredCall: inst.strategy === "covered_call_index" || inst.strategy === "option_income_active",
+    levels,
+    nextEarnings: nextEarnInfo,
+    nextExDate: nextEx ? { date: nextEx.exDate, amount: nextEx.amount } : null,
+    income: incomeView,
+    evidence: { price: evIds.price, tech: evIds.tech, volume: evIds.volume, bench: bmPrimary ? [bmPrimary.id] : [] },
+  });
+
   // ─────────────── 핵심 요약 ───────────────
   const summary: Statement[] = [];
   if (priceStatements[0]) summary.push(priceStatements[0]);
@@ -730,9 +854,10 @@ export function buildSymbolBriefing(symbol: string, session: SessionType, tradeD
     summary.unshift(S(`오늘은 미국 증시 휴장일입니다. 아래 가격 정보는 마지막 거래일(${tradeDate}) 기준이며 당일 주가 분석은 생성하지 않습니다.`, "notice"));
   }
 
+  const topChange = changes.items.find((c) => c.importance >= 2 && c.tag !== "news");
   const headlineParts = [
     `${symbol} ${dd ? fmtPct(dd.changePct) : "가격 데이터 없음"}`,
-    volRatio !== null ? `거래량 20일 평균의 ${volRatio.toFixed(1)}배` : null,
+    topChange ? topChange.short : volRatio !== null ? `거래량 20일 평균의 ${volRatio.toFixed(1)}배` : null,
     directNews.length ? `관련 뉴스 ${directNews.length}건` : "직접 관련 뉴스 없음",
   ].filter(Boolean);
 
@@ -773,6 +898,17 @@ export function buildSymbolBriefing(symbol: string, session: SessionType, tradeD
     upcoming: { items: upcoming, note: upcoming.length ? null : "확인된 예정 일정이 없습니다 (데이터 제공처 기준)." },
     risks: { general: generalRisks(inst), current },
     ai: null,
+    changes,
+    judgment,
+    glance: {
+      price: dd?.close ?? null,
+      changePct: dd?.changePct ?? null,
+      volRatio,
+      ret20: curState?.ret20 ?? null,
+      rsi: curState?.rsi ?? null,
+      fromHigh: curState?.fromHigh ?? null,
+      vol20: curState?.vol20 ?? null,
+    },
     basis: {
       analysisDate: tradeDate,
       priceAsOf,

@@ -190,10 +190,17 @@ export function getDb(): DatabaseSync {
   db.exec("PRAGMA busy_timeout = 10000;");
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec(SCHEMA);
+  migrate(db);
   scrubLeakedSecrets(db);
   globalThis.__stockDb = db;
   globalThis.__stockDbPath = file;
   return db;
+}
+
+/** 기존 DB 에 새 열 추가 (CREATE TABLE IF NOT EXISTS 는 열을 추가하지 않으므로) */
+function migrate(db: DatabaseSync) {
+  const cols = (t: string) => new Set((db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name));
+  if (!cols("news").has("image")) db.exec("ALTER TABLE news ADD COLUMN image TEXT");
 }
 
 /**

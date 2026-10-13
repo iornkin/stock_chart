@@ -5,7 +5,7 @@
  */
 import { env } from "../env";
 import { ProviderError, requestJson } from "../http";
-import { newsId } from "../news-utils";
+import { newsId, safeImageUrl } from "../news-utils";
 import type { NewsItem } from "../types";
 
 const P = "polygon";
@@ -63,6 +63,7 @@ export function parsePolygonNews(json: { results?: Array<Record<string, unknown>
       publishedAt: pub,
       provider: "Polygon.io",
       fetchedAt,
+      image: safeImageUrl(r.image_url),
       related: Array.isArray(r.tickers) ? (r.tickers as string[]).map((t) => t.toUpperCase()) : [],
     });
   }

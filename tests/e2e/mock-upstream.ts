@@ -305,7 +305,7 @@ function newsJson(q: string) {
   const isTicker = INSTRUMENTS.some((i) => i.symbol === sym);
   const base = sessionTimes(LAST).close;
   const items = [
-    { uuid: `${sym}-1`, title: `[TEST] ${q} synthetic headline about quarterly flows`, publisher: "Test Wire", link: `https://example.com/news/${encodeURIComponent(q)}/1`, providerPublishTime: Math.floor((base + 2 * 3600_000) / 1000), relatedTickers: isTicker ? [sym] : [] },
+    { uuid: `${sym}-1`, title: `[TEST] ${q} synthetic headline about quarterly flows`, publisher: "Test Wire", link: `https://example.com/news/${encodeURIComponent(q)}/1`, providerPublishTime: Math.floor((base + 2 * 3600_000) / 1000), relatedTickers: isTicker ? [sym] : [], thumbnail: { resolutions: [{ url: `http://127.0.0.1:${PORT}/img/news.svg`, width: 280, height: 180, tag: "280x180" }] } },
     { uuid: `${sym}-2`, title: `[TEST] ${q} synthetic headline about quarterly flows update`, publisher: "Other Wire", link: `https://example.org/news/${encodeURIComponent(q)}/2`, providerPublishTime: Math.floor((base + 3 * 3600_000) / 1000), relatedTickers: isTicker ? [sym] : [] },
     { uuid: `${sym}-3`, title: `[TEST] Older ${q} synthetic story from last week`, publisher: "Test Wire", link: `https://example.com/news/${encodeURIComponent(q)}/3`, providerPublishTime: Math.floor((base - 5 * 86400_000) / 1000), relatedTickers: isTicker ? [sym] : [] },
   ];
@@ -366,6 +366,10 @@ const server = http.createServer((req, res) => {
     if (p === "/__stats") return send(res, 200, { requests });
     // Yahoo
     if (p === "/yahoo-cookie/") return send(res, 404, "not found", { "Set-Cookie": "A3=test-cookie; Path=/; Domain=127.0.0.1" });
+    if (p.startsWith("/img/")) {
+      res.writeHead(200, { "Content-Type": "image/svg+xml" });
+      return res.end('<svg xmlns="http://www.w3.org/2000/svg" width="280" height="180"><rect width="280" height="180" fill="#9ab"/><text x="140" y="100" font-size="28" text-anchor="middle" fill="#fff">TEST IMAGE</text></svg>');
+    }
     if (p === "/yahoo2/v1/test/getcrumb") return req.headers.cookie?.includes("A3=") ? send(res, 200, "testcrumb") : send(res, 401, "Unauthorized");
     if (p === "/yahoo1/v7/finance/quote") {
       if (qp("crumb") !== "testcrumb") return send(res, 401, { finance: { error: { code: "Unauthorized" } } });

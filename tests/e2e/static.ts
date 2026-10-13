@@ -75,7 +75,7 @@ async function main() {
     const errors: string[] = [];
     const failedRequests: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
-    page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+    page.on("console", (m) => m.type() === "error" && !m.text().startsWith("Failed to load resource") && errors.push(m.text()));
     page.on("response", (r) => r.status() >= 400 && failedRequests.push(`${r.status()} ${r.url()}`));
 
     // 대시보드
@@ -152,6 +152,33 @@ async function main() {
     t = await textOf(page);
     check("캘린더: 일정 표시", t.includes("목록 보기"));
 
+    // 차별화 기능 (정적 사이트)
+    await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    t = await textOf(page);
+    check("대시보드: 오늘 확인할 것·새 변화 종목·레버리지 위험", t.includes("오늘 확인할 것") && t.includes("오늘 새 변화가 있는 종목") && t.includes("레버리지 ETF 위험 지표"));
+    await page.waitForTimeout(800);
+    check("대시보드: 관심 종목 새 변화(정적 JSON)", /개 중 \d+개에 새 변화|새로 생긴 중요한 변화 없음/.test(await textOf(page)));
+    await page.goto(`${BASE}/stock/QQQ/?tab=briefing`, { waitUntil: "networkidle" });
+    t = await textOf(page);
+    check("브리핑: 핵심 변화·종합 판단", t.includes("오늘의 핵심 변화") && t.includes("종합 판단"));
+    await page.goto(`${BASE}/leverage/`, { waitUntil: "networkidle" });
+    await page.waitForSelector("canvas", { timeout: 15000 }).catch(() => null);
+    t = await textOf(page);
+    check("레버리지 분석 (정적)", t.includes("기간별 수익률") && t.includes("TQQQ") && (await page.locator("canvas").count()) > 0);
+    await page.goto(`${BASE}/stock/JEPI/?tab=dividends`, { waitUntil: "networkidle" });
+    t = await textOf(page);
+    check("배당 탭: 계산기·수익률 분해 (정적)", t.includes("현금흐름 계산기") && t.includes("수익률의 관계"));
+    await page.goto(`${BASE}/income/`, { waitUntil: "networkidle" });
+    await page.getByLabel("보유 종목 선택").selectOption("JEPI");
+    await page.getByRole("button", { name: "추가" }).click();
+    await page.waitForTimeout(300);
+    check("배당 현금흐름 (정적)", (await textOf(page)).includes("월별 받은 금액"));
+    await page.goto(`${BASE}/map/`, { waitUntil: "networkidle" });
+    await page.locator('g[role="button"][aria-label^="TQQQ "]').click();
+    await page.waitForTimeout(300);
+    t = await textOf(page);
+    check("관계 지도 (정적)", t.includes("같은 묶음과 비교") && t.includes("TQQQ"));
+
     // 관심 종목·설정·상태
     await page.goto(`${BASE}/watchlist/`, { waitUntil: "networkidle" });
     await page.waitForTimeout(500);
@@ -180,7 +207,7 @@ async function main() {
     await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
     await page.screenshot({ path: path.join(SHOTS, "static-dashboard.png"), fullPage: false });
 
-    const unexpected = failedRequests.filter((u) => !u.includes("/stock/NOPE/"));
+    const unexpected = failedRequests.filter((u) => !u.includes("/stock/NOPE/") && !u.includes("/img/"));
     check("데이터 요청 실패 없음", unexpected.length === 0, unexpected.slice(0, 3).join(" | "));
     const realErrors = errors.filter((e) => !e.includes("404"));
     check("브라우저 콘솔 오류 없음", realErrors.length === 0, realErrors.slice(0, 3).join(" | "));

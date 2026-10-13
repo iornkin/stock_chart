@@ -165,14 +165,26 @@ async function main() {
     const page = await ctx.newPage();
     const consoleErrors: string[] = [];
     page.on("pageerror", (e) => consoleErrors.push(String(e)));
-    page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
+    // 외부 기사 이미지 로드 실패는 화면에서 대체 타일로 처리되므로 콘솔 오류에서 제외하고, 이미지가 아닌 요청 실패만 따로 확인한다
+    page.on("console", (m) => m.type() === "error" && !m.text().startsWith("Failed to load resource") && consoleErrors.push(m.text()));
+    const failedNonImage: string[] = [];
+    // 페이지 이동으로 중단된 미리 불러오기(ERR_ABORTED)는 실패가 아니다
+    page.on("requestfailed", (r) => r.resourceType() !== "image" && r.failure()?.errorText !== "net::ERR_ABORTED" && failedNonImage.push(`${r.resourceType()} ${r.url()} ${r.failure()?.errorText}`));
 
     await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
     let t = await textOf(page);
     check("대시보드: 시장 지수", t.includes("S&P 500") && t.includes("NASDAQ 100") && t.includes("Dow Jones"));
     check("대시보드: 핵심 종목 카드", (await page.locator('a[href="/stock/JEPI"]').count()) > 0 && t.includes("거래량"));
     check("대시보드: 상승/하락/거래량 순위", t.includes("상승률 상위") && t.includes("하락률 상위") && t.includes("거래량 변화 상위"));
-    check("대시보드: 종목별 브리핑 목록", t.includes("NVIDIA") || t.includes("엔비디아 오늘의 브리핑"));
+    check("대시보드: 오늘 확인할 것·새 변화 종목", t.includes("오늘 확인할 것") && t.includes("오늘 새 변화가 있는 종목"));
+    check("대시보드: 레버리지 위험 지표·데이터 갱신 시각", t.includes("레버리지 ETF 위험 지표") && t.includes("장 마감 데이터") && t.includes("TQQQ"));
+    const downCard = await page.evaluate(() => {
+      // 하락 종목 카드의 선 그래프는 하락 색(--down)
+      const cards = [...document.querySelectorAll('a[href^="/stock/"]')].filter((a) => a.querySelector("svg polyline") && a.textContent?.includes("−"));
+      const line = cards.map((c) => c.querySelector("svg polyline")).find(Boolean);
+      return line?.getAttribute("stroke") ?? null;
+    });
+    check("대시보드: 하락 종목 그래프는 하락 색", downCard === null || downCard === "var(--down)", String(downCard));
     check("대시보드: 실적·배당 일정", t.includes("실적 발표 일정") && t.includes("다가오는 배당락"));
     await page.screenshot({ path: path.join(OUT, "desktop-dashboard.png"), fullPage: true });
 
@@ -186,6 +198,7 @@ async function main() {
       await page.getByRole("tab", { name: "일일 브리핑" }).click();
       t = await textOf(page);
       check(`${s} 일일 브리핑 탭`, t.includes("오늘의 핵심 요약") && t.includes("기술적 분석") && t.includes("데이터와 분석의 기준") && t.includes("주요 위험 요인"));
+      check(`${s} 브리핑: 핵심 변화·종합 판단`, t.includes("오늘의 핵심 변화") && t.includes("종합 판단") && t.includes("규칙 기반 자동 분석"));
       await page.getByRole("tab", { name: "배당·분배금" }).click();
       t = await textOf(page);
       if (["GLD", "TQQQ", "QLD"].includes(s)) check(`${s} 분배금 기록 없음 → 데이터 미제공 안내(가짜 값 없음)`, t.includes("데이터 미제공"));
@@ -240,6 +253,42 @@ async function main() {
     check("종목 비교: 데이터 부족 시 제외 안내 (10년)", t.includes("제외") || t.includes("기간 전체 데이터가 없습니다") || t.includes("JEPI"));
     await page.screenshot({ path: path.join(OUT, "desktop-compare.png"), fullPage: true });
 
+    // 차별화 기능: 레버리지 분석·배당 현금흐름·관계 지도
+    await page.goto(`${BASE}/leverage`, { waitUntil: "networkidle" });
+    await page.waitForSelector("canvas", { timeout: 15000 }).catch(() => null);
+    t = await textOf(page);
+    check("레버리지 분석: 하루 목표 설명·기간별 수익률·급락 구간·1년 분포", t.includes("하루 목표와 장기 성과는 다릅니다") && t.includes("기간별 수익률") && t.includes("급락 구간의 손실과 회복") && t.includes("1년 보유했을 때") && t.includes("배수 대비"));
+    check("레버리지 분석: QQQ·QLD·TQQQ 같은 기간 비교 차트", t.includes("QQQ") && t.includes("QLD") && t.includes("TQQQ") && (await page.locator("canvas").count()) > 0);
+    await page.getByRole("tab", { name: /S&P 500/ }).click();
+    check("레버리지 분석: S&P 500 묶음", (await textOf(page)).includes("UPRO"));
+    await page.screenshot({ path: path.join(OUT, "desktop-leverage.png"), fullPage: true });
+    await page.goto(`${BASE}/stock/JEPI?tab=dividends`, { waitUntil: "networkidle" });
+    t = await textOf(page);
+    check("배당 탭: 계산기·변화 추적·월별 패턴·수익률 분해·지급 상태", t.includes("현금흐름 계산기") && t.includes("변화 추적") && t.includes("월별 지급 패턴") && t.includes("수익률의 관계") && t.includes("지급 완료"));
+    await page.getByLabel("보유 주식 수").fill("200");
+    await page.waitForTimeout(300);
+    t = await textOf(page);
+    check("배당 계산기: 수량 입력 반영·가정치 구분", t.includes("최근 12개월 실제 지급 기준") && t.includes("가정"));
+    await page.goto(`${BASE}/income`, { waitUntil: "networkidle" });
+    await page.getByLabel("보유 종목 선택").selectOption("SCHD");
+    await page.getByRole("button", { name: "추가" }).click();
+    await page.getByLabel("보유 종목 선택").selectOption("JEPI");
+    await page.getByRole("button", { name: "추가" }).click();
+    await page.waitForTimeout(300);
+    t = await textOf(page);
+    check("배당 현금흐름: 여러 종목 월별 계산", t.includes("SCHD") && t.includes("JEPI") && t.includes("월별 받은 금액") && t.includes("발표된 예정 지급"));
+    await page.screenshot({ path: path.join(OUT, "desktop-income.png"), fullPage: true });
+    await page.goto(`${BASE}/map`, { waitUntil: "networkidle" });
+    t = await textOf(page);
+    check("관계 지도: 기초지수 묶음", t.includes("나스닥100") && t.includes("S&P 500") && t.includes("배당") && t.includes("금"));
+    await page.locator('g[role="button"][aria-label^="JEPQ "]').click();
+    await page.waitForTimeout(300);
+    t = await textOf(page);
+    check("관계 지도: 선택 종목 비교(상관·중복)", t.includes("JEPQ") && t.includes("같은 묶음과 비교") && t.includes("상관"));
+    await page.getByRole("button", { name: /^NVDA \d+개 ETF/ }).click();
+    check("관계 지도: 개별 주식을 담은 ETF", (await textOf(page)).includes("이 종목을 담은 ETF"));
+    await page.screenshot({ path: path.join(OUT, "desktop-map.png"), fullPage: true });
+
     // 브리핑·캘린더·관심·설정·상태
     await page.goto(`${BASE}/briefing`, { waitUntil: "networkidle" });
     t = await textOf(page);
@@ -280,6 +329,10 @@ async function main() {
       ["/briefing", "briefing"],
       ["/compare", "compare"],
       ["/calendar", "calendar"],
+      ["/leverage", "leverage"],
+      ["/income", "income"],
+      ["/map", "map"],
+      ["/stock/JEPI?tab=dividends", "JEPI-dividends"],
     ]) {
       await m.goto(`${BASE}${url}`, { waitUntil: "networkidle" });
       await m.waitForTimeout(500);
@@ -319,6 +372,7 @@ async function main() {
     check("장애: 상태 페이지 실패 표시", (await textOf(page)).includes("실패"));
 
     check("브라우저 콘솔 오류 없음", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
+    check("이미지 외 요청 실패 없음", failedNonImage.length === 0, failedNonImage.slice(0, 3).join(" | "));
     await browser.close();
   } finally {
     killTree(app);

@@ -3,6 +3,8 @@ import type { QuoteView } from "@/lib/data/quotes";
 import { fmtPrice, fmtCompact } from "@/lib/format";
 import { formatEt } from "@/lib/time";
 import Sparkline from "./Sparkline";
+import type { BriefingDigest } from "@/lib/briefing/digest";
+import ChangeChips from "./ChangeChips";
 import { Change } from "./ui";
 
 export default function QuoteCard({
@@ -11,12 +13,14 @@ export default function QuoteCard({
   quote,
   spark,
   sparkLabel,
+  digest,
 }: {
   symbol: string;
   nameKo: string;
   quote: QuoteView | undefined;
   spark: number[];
   sparkLabel: string;
+  digest?: BriefingDigest;
 }) {
   return (
     <Link href={`/stock/${symbol}`} className="card group flex flex-col gap-2 p-3.5 transition-colors hover:border-accent">
@@ -27,7 +31,7 @@ export default function QuoteCard({
             {nameKo}
           </div>
         </div>
-        <Sparkline values={spark} width={84} height={30} label={`${symbol} ${sparkLabel}`} />
+        <Sparkline values={spark} width={84} height={30} label={`${symbol} ${sparkLabel}`} direction={quote?.changePct} />
       </div>
       {quote && quote.price !== null ? (
         <>
@@ -42,6 +46,11 @@ export default function QuoteCard({
         </>
       ) : (
         <div className="text-xs text-muted">시세 데이터 없음 (수집 대기 또는 제공처 오류)</div>
+      )}
+      {digest && (
+        <div className="border-t border-line pt-2">
+          <ChangeChips d={digest} max={1} minImportance={2} />
+        </div>
       )}
     </Link>
   );

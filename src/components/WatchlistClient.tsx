@@ -3,7 +3,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { INSTRUMENTS, CATEGORY_LABELS, CATEGORY_ORDER } from "@/config/instruments";
 import { setPrefs, useWatchlist } from "@/lib/client/prefs";
-import { fetchLatestHeadlines, fetchQuotes } from "@/lib/client/data-api";
+import { fetchDigests, fetchQuotes } from "@/lib/client/data-api";
+import type { BriefingDigest } from "@/lib/briefing/digest";
+import ChangeChips from "./ChangeChips";
 import { fmtCompact, fmtPrice } from "@/lib/format";
 import { formatEt } from "@/lib/time";
 import { Empty, PctBadge } from "./ui";
@@ -19,12 +21,7 @@ interface Q {
   fetchedAt: number;
   freshness: string;
 }
-interface B {
-  scope: string;
-  headline: string | null;
-  tradeDate: string;
-  session: string;
-}
+type B = BriefingDigest;
 
 export default function WatchlistClient() {
   const [list, toggle, hydrated] = useWatchlist();
@@ -42,7 +39,7 @@ export default function WatchlistClient() {
       .then((j) => alive && setQuotes(Object.fromEntries(j.quotes.map((q) => [q.symbol, q]))))
       .catch((e) => alive && setError(String(e.message ?? e)))
       .finally(() => alive && setLoading(false));
-    fetchLatestHeadlines(key.split(","))
+    fetchDigests(key.split(","))
       .then((out) => alive && setBriefs(out))
       .catch(() => alive && setBriefs({}));
     return () => {
@@ -95,7 +92,7 @@ export default function WatchlistClient() {
                 <th className="r">현재가</th>
                 <th className="r">등락</th>
                 <th className="r">거래량 / 3개월 평균</th>
-                <th>최신 브리핑</th>
+                <th>최신 브리핑 (판단 · 새 변화)</th>
                 <th>갱신</th>
                 <th>관리</th>
               </tr>
@@ -115,8 +112,9 @@ export default function WatchlistClient() {
                     <td className="r">{q ? `${fmtCompact(q.volume)} / ${fmtCompact(q.avgVolume3m)}` : "-"}</td>
                     <td className="max-w-xs">
                       {b ? (
-                        <Link href={`/stock/${s}?tab=briefing`} className="block truncate text-xs hover:text-accent">
-                          {b.tradeDate} · {b.headline}
+                        <Link href={`/stock/${s}?tab=briefing`} className="block hover:text-accent">
+                          <ChangeChips d={b} max={3} />
+                          <span className="mt-0.5 block text-[10px] text-muted">{b.tradeDate} 브리핑</span>
                         </Link>
                       ) : (
                         <span className="text-xs text-muted">없음</span>

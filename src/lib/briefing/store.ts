@@ -145,3 +145,11 @@ export function briefingsForDate(tradeDate: string): BriefingListItem[] {
     llmModel: r.llm_model,
   }));
 }
+
+/** 범위(종목)별 최신 브리핑 전체 (대시보드 요약용) */
+export function latestBriefingRecords(): BriefingRecord<SymbolBriefing | MarketBriefing>[] {
+  return all<Row>(
+    `SELECT b.* FROM briefings b
+     JOIN (SELECT scope, max(generated_at) AS g FROM briefings GROUP BY scope) m ON m.scope = b.scope AND m.g = b.generated_at`,
+  ).map((r) => toRecord<SymbolBriefing | MarketBriefing>(r));
+}
