@@ -162,6 +162,29 @@ body {
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  line-height: 1.6;
+  /* 한국어는 어절 단위로 줄바꿈해야 읽기 편하다 */
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* 열 지정이 없는 그리드(모바일 1열)도 내용 길이 때문에 화면 밖으로 넓어지지 않게 한다. grid-cols-* 유틸리티가 있으면 그쪽이 우선 */
+@layer base {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 본문 읽기용 글 (브리핑 문장 등) */
+.prose-ko {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--text);
+}
+.prose-ko-sm {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-2);
 }
 
 .num {

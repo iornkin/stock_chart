@@ -160,6 +160,7 @@ export function buildMarketBriefing(session: SessionType, tradeDate: string, now
       publisher: x.publisher,
       provider: x.provider,
       url: x.url,
+      image: x.image ?? null,
       reason: x.reason ?? "",
       matchType: x.matchType ?? null,
       duplicates: x.duplicates ?? [],

@@ -8,6 +8,7 @@ import MobileNav from "@/components/MobileNav";
 import PrefsApplier from "@/components/PrefsApplier";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme-script";
 import SnapshotBanner from "@/components/SnapshotBanner";
+import HashOpener from "@/components/HashOpener";
 import { IS_STATIC } from "@/lib/static-mode";
 
 export const metadata: Metadata = {
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen">
         <PrefsApplier />
+        <HashOpener />
         <div className="flex min-h-screen">
           <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col gap-4 border-r border-line bg-surface px-3 py-4 lg:flex">
             <Link href="/" className="px-3 text-base font-bold tracking-tight">

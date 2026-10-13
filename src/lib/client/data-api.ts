@@ -4,6 +4,8 @@
  */
 import { IS_STATIC, staticDataUrl } from "@/lib/static-mode";
 import { compareFromInputs, type CompareInput, type CompareResult } from "@/lib/compare-core";
+import { digestOf, type BriefingDigest } from "@/lib/briefing/digest";
+import type { SymbolBriefing } from "@/lib/briefing/types";
 
 export async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url, IS_STATIC ? { cache: "no-cache" } : undefined);
@@ -37,22 +39,15 @@ export async function fetchQuotes<Q extends { symbol: string }>(symbols: string[
   return { quotes, missing: symbols.filter((s) => !have.has(s)), serverTime: all.serverTime };
 }
 
-export interface BriefingHeadline {
-  scope: string;
-  headline: string | null;
-  tradeDate: string;
-  session: string;
-}
-
-/** 종목별 최신 브리핑 제목 */
-export async function fetchLatestHeadlines(symbols: string[]): Promise<Record<string, BriefingHeadline>> {
+/** 종목별 최신 브리핑 요약 (제목·종합 판단·주요 변화) */
+export async function fetchDigests(symbols: string[]): Promise<Record<string, BriefingDigest>> {
   if (IS_STATIC) {
-    const all = await getJson<Record<string, BriefingHeadline>>(staticDataUrl("briefing/latest.json"));
+    const all = await getJson<Record<string, BriefingDigest>>(staticDataUrl("briefing/latest.json"));
     return Object.fromEntries(symbols.filter((s) => all[s]).map((s) => [s, all[s]]));
   }
-  const rs = await Promise.all(symbols.map((s) => getJson<BriefingHeadline>(`/api/briefing/${s}`).catch(() => null)));
-  const out: Record<string, BriefingHeadline> = {};
-  for (const r of rs) if (r) out[r.scope] = r;
+  const rs = await Promise.all(symbols.map((s) => getJson<{ scope: string; content: SymbolBriefing }>(`/api/briefing/${s}`).catch(() => null)));
+  const out: Record<string, BriefingDigest> = {};
+  for (const r of rs) if (r && r.content) out[r.scope] = digestOf(r.content);
   return out;
 }
 

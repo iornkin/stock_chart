@@ -10,8 +10,9 @@ import { readBarMeta, readBars } from "@/lib/data/bars";
 import { readDividends } from "@/lib/data/dividends";
 import { delayLabel, getQuotes } from "@/lib/data/quotes";
 import { loadCompareInput } from "@/lib/compare";
-import { availableBriefingDates, briefingHistory, briefingsForDate, latestBriefingList, readBriefing } from "@/lib/briefing/store";
-import type { MarketBriefing, SessionType } from "@/lib/briefing/types";
+import { availableBriefingDates, briefingHistory, briefingsForDate, latestBriefingRecords, readBriefing } from "@/lib/briefing/store";
+import type { MarketBriefing, SessionType, SymbolBriefing } from "@/lib/briefing/types";
+import { digestOf, type BriefingDigest } from "@/lib/briefing/digest";
 import { describeSchedule, getSchedule } from "@/lib/jobs/schedule";
 import { JOB_LABELS } from "@/lib/jobs/jobs";
 import { env } from "@/lib/env";
@@ -103,8 +104,8 @@ function exportCharts(symbol: string) {
 }
 
 function exportBriefings() {
-  const latest: Record<string, { scope: string; headline: string | null; tradeDate: string; session: string }> = {};
-  for (const b of latestBriefingList()) latest[b.scope] = { scope: b.scope, headline: b.headline, tradeDate: b.tradeDate, session: b.session };
+  const latest: Record<string, BriefingDigest> = {};
+  for (const b of latestBriefingRecords()) if (b.scope !== "MARKET") latest[b.scope] = digestOf(b.content as SymbolBriefing);
   write("briefing/latest.json", latest);
 
   // 종목·시장별 최근 30건 (브리핑 상세 페이지의 기록 목록과 같은 범위)

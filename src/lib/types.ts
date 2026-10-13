@@ -106,6 +106,8 @@ export interface NewsItem {
   provider: string;
   fetchedAt: number;
   related: string[];
+  /** 제공처가 준 기사 대표 이미지 주소 (없으면 null) */
+  image?: string | null;
   aiTitleKo?: string | null;
   aiSummaryKo?: string | null;
   /** news_symbols 에서 온 연관 이유 */

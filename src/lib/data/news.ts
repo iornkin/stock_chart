@@ -53,9 +53,9 @@ function saveTagged(scope: string, tagged: Tagged[]) {
   tx(() => {
     for (const { item, matchType, reason } of tagged) {
       run(
-        `INSERT INTO news(id, title, summary, url, publisher, published_at, provider, fetched_at, related)
-         VALUES(?,?,?,?,?,?,?,?,?)
-         ON CONFLICT(id) DO UPDATE SET summary=COALESCE(news.summary, excluded.summary),
+        `INSERT INTO news(id, title, summary, url, publisher, published_at, provider, fetched_at, related, image)
+         VALUES(?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET summary=COALESCE(news.summary, excluded.summary), image=COALESCE(news.image, excluded.image),
            related=CASE WHEN length(excluded.related) > length(COALESCE(news.related,'')) THEN excluded.related ELSE news.related END`,
         item.id,
         item.title,
@@ -66,6 +66,7 @@ function saveTagged(scope: string, tagged: Tagged[]) {
         item.provider,
         item.fetchedAt,
         JSON.stringify(item.related),
+        item.image ?? null,
       );
       const rank: Record<MatchType, number> = { tagged: 4, title: 3, query: 2, market: 2, search: 1 };
       const existing = all<{ match_type: string }>("SELECT match_type FROM news_symbols WHERE news_id=? AND symbol=?", item.id, scope)[0];
@@ -205,6 +206,7 @@ interface NewsRow {
   related: string | null;
   ai_title_ko: string | null;
   ai_summary_ko: string | null;
+  image: string | null;
   reason: string | null;
   match_type: string | null;
 }
@@ -226,6 +228,7 @@ function rowToItem(r: NewsRow): NewsItem {
     provider: r.provider,
     fetchedAt: r.fetched_at,
     related,
+    image: r.image ?? null,
     aiTitleKo: r.ai_title_ko,
     aiSummaryKo: r.ai_summary_ko,
     reason: r.reason,

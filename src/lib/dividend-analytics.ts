@@ -162,3 +162,168 @@ export function splitAdjustFactor(exDate: string, splits: { date: string; numera
   }
   return f;
 }
+
+// ─────────────────────────────── 분배금 분석 확장 ───────────────────────────────
+
+export type PaymentStatus = "paid" | "scheduled" | "ex_passed" | "announced";
+
+/**
+ * 지급 상태 (실제 기록과 예정 구분)
+ * - paid: 지급일이 지났음 / scheduled: 배당락은 지났고 지급일은 아직 / announced: 발표됐지만 배당락 전
+ * - ex_passed: 배당락은 지났지만 지급일 정보가 없음
+ */
+export function paymentStatus(d: Dividend, today: string): PaymentStatus {
+  if (d.exDate > today) return "announced";
+  if (!d.payDate) return "ex_passed";
+  return d.payDate <= today ? "paid" : "scheduled";
+}
+
+export const PAYMENT_STATUS_KO: Record<PaymentStatus, string> = {
+  paid: "지급 완료",
+  scheduled: "지급 예정 (배당락 지남)",
+  announced: "발표됨 (배당락 전)",
+  ex_passed: "배당락 지남 · 지급일 미제공",
+};
+
+/** 연도별 합계와 전년 대비 증감. 자료 첫해와 올해는 1년 전체가 아닐 수 있어 부분 합계로 표시하고 증감률을 계산하지 않는다 */
+export function annualTotals(divs: Dividend[], today: string): { year: number; sum: number; count: number; partial: boolean; yoy: number | null }[] {
+  const s = summarizeDividends(divs, today, null).yearly.map((y, i) => ({ ...y, partial: y.partial || i === 0 }));
+  return s.map((y, i) => {
+    const prev = s[i - 1];
+    return { ...y, yoy: !y.partial && prev && !prev.partial && prev.sum > 0 ? (y.sum / prev.sum - 1) * 100 : null };
+  });
+}
+
+/** 완전한 연도 합계 기준 연평균 증가율 (n년) */
+export function annualGrowthRate(totals: { year: number; sum: number; partial: boolean }[], years: number): number | null {
+  const full = totals.filter((t) => !t.partial);
+  if (full.length < years + 1) return null;
+  const a = full[full.length - 1 - years].sum;
+  const b = full[full.length - 1].sum;
+  if (a <= 0 || b <= 0) return null;
+  return (Math.pow(b / a, 1 / years) - 1) * 100;
+}
+
+/** 최근 n회 정기 지급의 증감 횟수 */
+export function changeTrend(divs: Dividend[], today: string, n = 12): { up: number; down: number; same: number; count: number; firstAmount: number | null; lastAmount: number | null } {
+  const reg = divs.filter((d) => isRegular(d) && d.exDate <= today).sort((a, b) => a.exDate.localeCompare(b.exDate)).slice(-(n + 1));
+  let up = 0;
+  let down = 0;
+  let same = 0;
+  for (let i = 1; i < reg.length; i++) {
+    const r = reg[i].amount / reg[i - 1].amount - 1;
+    if (Math.abs(r) < 0.0005) same++;
+    else if (r > 0) up++;
+    else down++;
+  }
+  return { up, down, same, count: Math.max(0, reg.length - 1), firstAmount: reg[0]?.amount ?? null, lastAmount: reg[reg.length - 1]?.amount ?? null };
+}
+
+/** 최근 24개월 실제 지급의 월별 패턴 (지급일, 없으면 배당락일 기준) — 예측이 아닌 과거 기록 */
+export function monthPattern(divs: Dividend[], today: string): { month: number; entries: { ym: string; amount: number; basis: "pay" | "ex" }[] }[] {
+  const from = addDays(today, -730);
+  const out = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, entries: [] as { ym: string; amount: number; basis: "pay" | "ex" }[] }));
+  for (const d of divs) {
+    if (d.exDate > today || d.exDate <= from) continue;
+    const date = d.payDate ?? d.exDate;
+    out[Number(date.slice(5, 7)) - 1].entries.push({ ym: date.slice(0, 7), amount: d.amount, basis: d.payDate ? "pay" : "ex" });
+  }
+  return out;
+}
+
+/**
+ * 1년 전과 비교한 TTM 수익률 변화 분해
+ * 수익률 = 최근 12개월 분배금 ÷ 가격. 변화 = 가격 효과(분배금이 그대로일 때 가격 변화로 생긴 차이) + 분배금 효과(분배금 변화)
+ */
+export interface YieldDecomposition {
+  asOf: string;
+  yearAgo: string;
+  priceNow: number;
+  priceThen: number;
+  ttmNow: number;
+  ttmThen: number;
+  yieldNow: number;
+  yieldThen: number;
+  priceEffect: number;
+  distributionEffect: number;
+}
+
+export function yieldDecomposition(divs: Dividend[], points: { date: string; close: number }[], asOf: string): YieldDecomposition | null {
+  if (points.length < 260) return null;
+  const sorted = divs.filter(isRegular);
+  const lastIdx = points.length - 1;
+  const now = points[lastIdx];
+  const thenDate = addDays(now.date, -365);
+  let ti = -1;
+  for (let i = lastIdx; i >= 0; i--) {
+    if (points[i].date <= thenDate) {
+      ti = i;
+      break;
+    }
+  }
+  if (ti < 0) return null;
+  const then = points[ti];
+  const sumIn = (end: string) => sorted.filter((d) => d.exDate > addDays(end, -365) && d.exDate <= end).reduce((a, d) => a + d.amount, 0);
+  const ttmNow = sumIn(now.date);
+  const ttmThen = sumIn(then.date);
+  if (ttmNow <= 0 || ttmThen <= 0 || sorted[0]?.exDate > addDays(then.date, -330)) return null;
+  const yieldNow = (ttmNow / now.close) * 100;
+  const yieldThen = (ttmThen / then.close) * 100;
+  const priceEffect = (ttmThen / now.close - ttmThen / then.close) * 100;
+  const distributionEffect = ((ttmNow - ttmThen) / now.close) * 100;
+  return { asOf, yearAgo: then.date, priceNow: now.close, priceThen: then.close, ttmNow, ttmThen, yieldNow, yieldThen, priceEffect, distributionEffect };
+}
+
+/** 분기 말 시점별 가격·TTM 분배금·TTM 수익률 (최근 n분기) */
+export function ttmYieldHistory(divs: Dividend[], points: { date: string; close: number }[], quarters = 12): { date: string; price: number; ttm: number; yield: number }[] {
+  const reg = divs.filter(isRegular);
+  const out: { date: string; price: number; ttm: number; yield: number }[] = [];
+  if (!points.length) return out;
+  const last = points[points.length - 1].date;
+  for (let q = quarters - 1; q >= 0; q--) {
+    const target = addDays(last, -q * 91);
+    let p: { date: string; close: number } | undefined;
+    for (let i = points.length - 1; i >= 0; i--) {
+      if (points[i].date <= target) {
+        p = points[i];
+        break;
+      }
+    }
+    if (!p || p.date < addDays(points[0].date, 365)) continue;
+    const ttm = reg.filter((d) => d.exDate > addDays(p.date, -365) && d.exDate <= p.date).reduce((a, d) => a + d.amount, 0);
+    if (ttm > 0) out.push({ date: p.date, price: p.close, ttm, yield: (ttm / p.close) * 100 });
+  }
+  return out;
+}
+
+/**
+ * 성장 비교용 지수 (시작 100): 가격만 / 분배금 재투자 / 분배금 현금 수령(재투자 안 함)
+ * 주 단위로 줄여 반환
+ */
+export function incomeGrowthSeries(points: { date: string; close: number }[], divs: Dividend[]): { dates: string[]; price: number[]; reinvest: number[]; cash: number[] } {
+  const out = { dates: [] as string[], price: [] as number[], reinvest: [] as number[], cash: [] as number[] };
+  if (points.length < 2) return out;
+  const byDate = divs.map((d) => ({ exDate: d.exDate, amount: d.amount })).sort((a, b) => a.exDate.localeCompare(b.exDate));
+  const p0 = points[0].close;
+  let tr = 100;
+  let cash = 0;
+  let k = 0;
+  while (k < byDate.length && byDate[k].exDate <= points[0].date) k++;
+  for (let i = 0; i < points.length; i++) {
+    if (i > 0) {
+      let div = 0;
+      while (k < byDate.length && byDate[k].exDate <= points[i].date) div += byDate[k++].amount;
+      tr *= (points[i].close + div) / points[i - 1].close;
+      cash += div;
+    }
+    const last = i === points.length - 1;
+    const weekEnd = !last && new Date(`${points[i + 1].date}T00:00:00Z`).getUTCDay() < new Date(`${points[i].date}T00:00:00Z`).getUTCDay();
+    if (i === 0 || last || weekEnd) {
+      out.dates.push(points[i].date);
+      out.price.push(Math.round((points[i].close / p0) * 10000) / 100);
+      out.reinvest.push(Math.round(tr * 100) / 100);
+      out.cash.push(Math.round(((points[i].close + cash) / p0) * 10000) / 100);
+    }
+  }
+  return out;
+}

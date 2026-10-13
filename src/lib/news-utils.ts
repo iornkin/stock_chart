@@ -87,7 +87,9 @@ export function dedupeNews(items: NewsItem[], threshold = 0.55): NewsItem[] {
   return clusters
     .map((c) => {
       const withSummary = c.members.find((m) => m.summary);
-      const rep = withSummary && !c.rep.summary ? { ...c.rep, summary: withSummary.summary } : c.rep;
+      const withImage = c.members.find((m) => m.image);
+      let rep = withSummary && !c.rep.summary ? { ...c.rep, summary: withSummary.summary } : c.rep;
+      if (withImage && !rep.image) rep = { ...rep, image: withImage.image };
       const seen = new Set([canonicalUrl(rep.url)]);
       const duplicates = c.members
         .filter((m) => {
@@ -118,4 +120,15 @@ export function decodeEntities(s: string): string {
     .replace(/&#39;|&apos;/g, "'")
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
     .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)));
+}
+
+/** 제공처가 준 이미지 주소 중 http(s) 만 허용 */
+export function safeImageUrl(u: unknown): string | null {
+  if (typeof u !== "string" || !u) return null;
+  try {
+    const url = new URL(u);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
