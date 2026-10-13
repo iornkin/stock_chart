@@ -4,6 +4,7 @@
  * - 타임아웃, 재시도(429/5xx/네트워크 오류), 호출 로그(provider_calls)
  * - API 키는 로그에 남기지 않는다.
  */
+import { redactSecrets } from "./redact";
 import { env } from "./env";
 import { run, get } from "./db";
 
@@ -75,7 +76,7 @@ export function logProviderCall(provider: string, endpoint: string, ok: boolean,
       maskUrl(endpoint),
       ok ? 1 : 0,
       status,
-      error ? error.slice(0, 500) : null,
+      error ? redactSecrets(error).slice(0, 500) : null,
       Date.now(),
       ms,
     );

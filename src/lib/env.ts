@@ -5,8 +5,11 @@
 import path from "node:path";
 
 function str(name: string, fallback = ""): string {
-  const v = process.env[name];
-  return v === undefined || v === "" ? fallback : v;
+  let v = (process.env[name] ?? "").trim();
+  // 'NAME=값' 형태나 따옴표로 감싼 값을 붙여 넣은 경우도 값만 사용
+  if (v.startsWith(`${name}=`)) v = v.slice(name.length + 1).trim();
+  if (v.length >= 2 && (v[0] === '"' || v[0] === "'") && v[v.length - 1] === v[0]) v = v.slice(1, -1).trim();
+  return v === "" ? fallback : v;
 }
 function bool(name: string, fallback: boolean): boolean {
   const v = process.env[name];
