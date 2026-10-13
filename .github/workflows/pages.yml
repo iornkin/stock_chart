@@ -1,0 +1,142 @@
+# 정적 사이트 자동 갱신 (GitHub Pages)
+# 정해진 시각에 데이터를 수집·브리핑 생성 → 정적 사이트 빌드 → GitHub Pages 배포.
+# 수집한 데이터(SQLite DB)는 실행 사이에 유지되도록 압축해서 'data' 브랜치에 저장한다.
+#
+# 처음 설정 (README 의 'GitHub Pages 로 무료 운영' 참고)
+#   1) Settings → Pages → Build and deployment → Source: GitHub Actions
+#   2) Settings → Secrets and variables → Actions → New repository secret:
+#      SEC_USER_AGENT, FINNHUB_API_KEY, FRED_API_KEY (선택: POLYGON_API_KEY, ALPHAVANTAGE_API_KEY, ANTHROPIC_API_KEY)
+#   3) Actions 탭 → 이 워크플로 → Run workflow (mode: all)
+name: 정적 사이트 갱신
+
+on:
+  schedule:
+    # 시각은 UTC 기준. GitHub 사정으로 수십 분 늦게 시작하거나 건너뛸 수 있다.
+    # 평일 미국 장중: 한국 22:45·00:45·02:45·04:45 (미국 동부 서머타임 09:45~15:45, 겨울 08:45~14:45)
+    - cron: "45 13,15,17,19 * * 1-5"
+    # 평일 장 마감 후(종가 확정·장 마감 후 브리핑): 한국 다음 날 07:20
+    - cron: "20 22 * * 1-5"
+    # 주말(휴장일 브리핑·뉴스): 한국 00:30
+    - cron: "30 15 * * 0,6"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "due = 지금 시각에 해야 할 작업만 / all = 전체 수집 (처음 실행할 때)"
+        type: choice
+        options: [due, all]
+        default: due
+
+permissions:
+  contents: write # data 브랜치에 DB 저장
+  pages: write
+  id-token: write
+  actions: write # 예약 실행 유지 시도 (아래 keepalive)
+
+concurrency:
+  group: pages-site
+  cancel-in-progress: false
+
+env:
+  DATABASE_PATH: ./data/app.db
+  DATA_BRANCH: data
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      collect: ${{ steps.collect.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: 저장된 DB 불러오기
+        run: |
+          mkdir -p data
+          if git fetch --depth=1 origin "$DATA_BRANCH" 2>/dev/null; then
+            git show "origin/$DATA_BRANCH:app.db.gz" | gunzip > data/app.db
+            ls -lh data/app.db
+          else
+            echo "data 브랜치가 없습니다 — 처음 실행으로 보고 새 DB 를 만듭니다"
+          fi
+
+      - name: 데이터 수집·브리핑 생성
+        id: collect
+        continue-on-error: true
+        env:
+          MODE: ${{ inputs.mode || 'due' }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          COLLECT_ALL_INTERVALS: "1"
+        run: npm run job -- "$MODE"
+
+      - name: DB 저장 (data 브랜치)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          test -f data/app.db || { echo "DB 가 없습니다"; exit 1; }
+          rm -f data/snapshot.db
+          node --disable-warning=ExperimentalWarning -e "const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync('data/app.db'); db.exec(\"PRAGMA wal_checkpoint(TRUNCATE); VACUUM INTO 'data/snapshot.db'\"); db.close();"
+          gzip -9 -c data/snapshot.db > data/app.db.gz
+          size=$(stat -c %s data/app.db.gz)
+          echo "압축 DB 크기: $((size / 1024 / 1024))MB"
+          if [ "$size" -gt 95000000 ]; then
+            echo "::warning::압축 DB 가 95MB 를 넘어 저장하지 않았습니다 (GitHub 파일 한도 100MB)"
+            exit 0
+          fi
+          dir=$(mktemp -d)
+          cp data/app.db.gz "$dir/"
+          printf '이 브랜치는 정적 사이트 갱신 워크플로가 자동으로 덮어씁니다. 수집 데이터(SQLite) 압축본입니다.\n' > "$dir/README.md"
+          cd "$dir"
+          git init -q -b "$DATA_BRANCH"
+          git add .
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "DB 스냅샷 $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$DATA_BRANCH"
+
+      - name: Pages 설정
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: 정적 사이트 빌드
+        env:
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: npm run build:static
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  report:
+    needs: [build, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      # 공개 저장소는 60일 동안 활동이 없으면 예약 실행이 멈춘다. 워크플로를 다시 활성화해 두는 시도(효과는 보장되지 않음).
+      - name: 예약 실행 유지
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/pages.yml/enable"
+      - name: 수집 실패 알림
+        if: needs.build.outputs.collect == 'failure'
+        run: |
+          echo "::error::데이터 수집 작업 중 실패한 작업이 있습니다. 사이트의 '데이터 상태' 화면과 이 실행 기록의 '데이터 수집·브리핑 생성' 단계를 확인하세요."
+          exit 1

@@ -1,0 +1,2 @@
+/** <head> 에서 첫 페인트 전에 테마·색상 규칙을 적용하는 인라인 스크립트 (localStorage 키는 prefs.ts 와 동일) */
+export const THEME_BOOT_SCRIPT = `(function(){try{var p=JSON.parse(localStorage.getItem('usi-prefs-v1')||'{}');var e=document.documentElement;if(p.theme==='light'||p.theme==='dark')e.setAttribute('data-theme',p.theme);e.setAttribute('data-colors',p.colors==='us'?'us':'kr');}catch(_){document.documentElement.setAttribute('data-colors','kr');}})();`;

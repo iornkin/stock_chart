@@ -1,1 +1,309 @@
-# stock_chart
+# US Stock Insight: 미국 주식·ETF 분석 웹사이트
+
+PC와 모바일 브라우저에서 사용하는 미국 주식·미국 상장 ETF 분석 사이트입니다.
+다음 정보를 한곳에서 확인할 수 있습니다.
+
+- 주가 차트와 거래량
+- 기술적 지표
+- 기업 재무 정보와 ETF 운용 정보
+- 배당·분배금 기록
+- 관련 뉴스
+- 종목별 일일 투자 브리핑
+
+> 이 사이트는 투자 정보를 이해하는 데 도움을 주려는 자료입니다. 매수·매도를 권유하지 않습니다.
+> 브리핑에서는 확인된 사실, 계산값, 해석을 구분해 표시합니다. 원인이 확인되지 않은 주가 움직임은 원인을 추정하지 않습니다.
+
+---
+
+## 1. 주요 기능
+
+| 메뉴 | 내용 |
+|---|---|
+| **대시보드** (`/`) | S&P 500, NASDAQ Composite, NASDAQ 100, Dow 지수와 금리·달러·금·VIX를 보여 줍니다. 핵심 종목은 가격, 등락, 거래량, 1개월 추이, 갱신 시각을 카드로 표시합니다. 지원 종목 안에서 상승·하락·거래량 변화 순위를 계산합니다. 이 밖에 시장 브리핑, 종목별 브리핑 목록, 시장 뉴스, 실적 발표 일정, 다가오는 배당락·지급일을 보여 줍니다. |
+| **종목 상세** (`/stock/QQQ`) | 시세, 거래소, 개장 여부, 갱신 시각, 실시간·지연 구분, 관심 종목 버튼이 있습니다. 차트 아래에는 개요, 일일 브리핑, 재무 정보(또는 ETF 정보), 배당·분배금, 뉴스, 종목 비교 탭이 있습니다. |
+| **일일 브리핑** (`/briefing`) | 오늘의 시장 브리핑과 종목별 브리핑 목록입니다. 날짜와 구분(장중, 장 마감 후, 휴장일)별 기록도 볼 수 있습니다. |
+| **종목 비교** (`/compare`) | 최대 5개 종목을 시작값 100으로 정규화한 차트로 비교합니다. 가격 수익률, 총수익률(재투자·현금), CAGR, 변동성, 최대 낙폭, 거래량, 분배금, 총보수, 운용자산을 함께 보여 줍니다. |
+| **배당·분배금 캘린더** (`/calendar`) | 월별 배당락일·지급일 달력과 목록입니다. 분류와 구분으로 거를 수 있습니다. |
+| **관심 종목** (`/watchlist`) | 이 브라우저에 저장되는 관심 종목입니다. 시세와 최신 브리핑을 함께 보여 주고, 순서를 바꾸거나 삭제할 수 있습니다. |
+| **설정** (`/settings`) | 다크·라이트 모드, 상승·하락 색상(한국식·미국식), 자동 새로고침, 차트 기본값을 정합니다. 관리자는 서버 업데이트 일정을 바꾸고 작업을 수동으로 실행할 수 있습니다. |
+| **데이터 상태** (`/status`) | 작업별 최근 실행 결과와 마지막 정상 완료 시각, 제공처별 호출 성공·실패, 최근 오류를 보여 줍니다. |
+| **지원 종목** (`/stocks`) | 설정 파일에 등록된 종목을 분류별로 보여 줍니다. |
+
+### 차트 (TradingView Lightweight Charts v5)
+- 차트 종류: 캔들스틱(기본), 라인, 영역
+- 기간: 1일, 5일, 1개월, 3개월, 6개월, 1년, 5년, 전체
+- 봉 간격: 1·5·15·30분봉, 1시간봉, 일·주·월봉 (제공처 허용 범위 안)
+- 패널: 가격 패널 아래에 거래량, RSI, MACD 패널이 있고 모두 같은 시간축을 씁니다. 패널 높이는 경계를 끌어 조절합니다.
+- 지표: SMA·EMA(기간 변경 가능), 볼린저 밴드, VWAP(분봉은 세션 VWAP, 일봉 이상은 20봉 이동 VWAP), 거래량 이동평균, 배당락 표시
+- 십자선 범례: 날짜·시각(ET), 시가·고가·저가·종가, 직전 봉 대비 변동률, 거래량, 추정 거래대금(가격×거래량), 지표 값
+- 확대·축소와 과거 구간 이동: 휠, 드래그, 핀치
+
+### 배당·분배금
+- 기업 주식은 "배당금", ETF는 "분배금"으로 구분해 표시합니다.
+- 보여 주는 항목:
+  - 최근 지급액, 배당락일, 지급일
+  - 직전 대비, 1년 전 같은 회차 대비 변동
+  - 최근 12개월(TTM) 합계와 TTM 수익률
+  - 최근 지급액 연환산 수익률(참고값)
+  - 지급 주기: 실제 지급 기록으로 판정하고, 제공처가 밝힌 값도 함께 표시
+  - 발표된 다음 분배금
+  - 연도별 합계, 지급 기록 그래프, 과거 지급 내역 표(배당락일, 지급일, 주당 지급액, 지급 유형, 출처)
+- 계산 방식은 화면에 그대로 적어 둡니다. 연환산은 지급 주기가 규칙적일 때만 계산하고, "확정 연간 지급액이 아님"을 함께 표시합니다.
+- 특별배당과 자본이득 분배는 정기 지급과 따로 집계합니다. 주식분할 이전 지급액은 분할 비율로 조정합니다.
+- 가격 수익률, 총수익률(재투자 가정), 총수익률(현금 수령)을 1·3·5년 기준으로 나눠 보여 줍니다.
+- 커버드콜·옵션 인컴 ETF에는 옵션 프리미엄, 자본환급(ROC) 가능성, "높은 분배율이 높은 총수익을 뜻하지 않음" 안내를 붙입니다.
+- 기록이 없으면 "데이터 미제공"으로 표시하고 예시 값을 채우지 않습니다.
+
+### 종목별 일일 투자 브리핑 (핵심 기능)
+각 종목 브리핑은 그 종목에 저장된 데이터만으로 만듭니다. 항목은 다음과 같습니다.
+1. 핵심 요약
+2. 주가 움직임: 등락, 갭, 일중 위치, 거래량 대비 20일 평균, 최근 5거래일, 5분봉 장중 흐름, 기준 지수·기초자산 비교
+3. 관련 뉴스: 수집 구간 안의 기사만 넣고 중복은 통합합니다. 기사마다 제목, 요약, 게시 시각, 출처, 원문 링크, 관련 이유를 붙입니다.
+4. 기술적 분석: 계산 결과와 해석을 나눠 보여 주고, 지지·저항은 "분석상 참고 수준"으로 표시합니다.
+5. 앞으로 확인할 사항: 실적 발표, 편입 종목 실적, 배당락·지급일, 경제지표, 휴장일
+6. 주요 위험 요인: 상품 유형별 일반 설명과 데이터에 근거한 현재 관찰을 나눠 씁니다.
+7. 데이터와 분석의 기준: 분석 기준일, 주가 기준 시각, 뉴스 수집 시각, 제공처, 한계, 근거 자료 목록
+
+종목 유형별 차별화:
+
+| 유형 | 브리핑에서 다루는 내용 |
+|---|---|
+| TQQQ·QLD 등 레버리지 | 기준 지수 등락률×배수와 실제 등락률의 차이. 20거래일 복리 효과 차이. 기준 지수 실현 변동성 |
+| JEPI·JEPQ·DIVO 등 인컴 | 기준 지수 대비 상승·하락 참여 방식. 분배금 변동. 1년 가격 수익률과 분배금 포함 수익률 |
+| GLD·IAU·GLDM | 금 선물 대비 움직임, 10년물 금리, 달러 인덱스. 기업 실적 대신 금 가격 중심 |
+| 지수·섹터 ETF | 상위 편입 종목 기여도(비중×등락률, 근사). 상위 10개 집중도. 편입 종목 실적 일정 |
+| M7 | 기준 지수 대비 성과. 실적 발표 일정. 밸류에이션 지표(사실만 표시) |
+
+문장마다 성격 배지를 붙입니다.
+- `사실`: 수집 데이터로 확인된 사실
+- `계산`: 수집 데이터로 계산한 값
+- `분석 해석`: 사이트의 규칙 기반 해석
+- `보도된 시장 해석`: 기사에 실린 시장 참여자의 해석
+- `AI 분석`: AI가 근거 자료만으로 작성한 문장
+- `안내`: 데이터 한계 안내
+
+문장마다 근거 ID(예: `[P1]`, `[N2]`)가 붙고, 근거 자료 목록으로 이어집니다.
+
+---
+
+## 2. 지원 종목
+
+종목은 모두 `src/config/instruments.ts` 한 파일에서 관리합니다. 배열에 항목을 추가하거나 지우면 사이트 전체(검색, 대시보드, 브리핑, 캘린더, 비교)에 반영됩니다.
+이 파일에는 운용사가 공시한 정성 정보(추종 지수, 레버리지 배수, 전략 요약)만 넣습니다. 수치는 모두 API에서 받아옵니다.
+
+- **M7 (7개)**: AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA
+- **지수 ETF (9개)**: QQQ, QQQM, VOO, SPY, IVV, **SPYM**, VTI, SCHG, VUG
+  - SPLG는 2025-10-31 티커가 SPYM으로 바뀌었습니다(State Street 공지). `/stock/SPLG` 주소는 SPYM으로 연결되고, 검색에서도 SPLG를 찾을 수 있습니다.
+- **레버리지 ETF (6개)**: TQQQ, QLD, UPRO, SSO, SPXL, SOXL
+- **배당 성장 ETF (9개)**: DGRO, SCHD, VIG, VYM, HDV, NOBL, FDVV, DGRW, SPYD
+- **월분배금·인컴 ETF (10개)**: JEPI, JEPQ, DIVO, QYLD, XYLD, RYLD, SPYI, QQQI, GPIQ, GPIX
+- **금 ETF (3개)**: GLD, IAU, GLDM
+- **반도체·기술주 ETF (3개)**: SMH, SOXX, XLK
+- **핵심 종목**(`core: true`): M7, QQQ, VOO, SPY, TQQQ, QLD, DGRO, DIVO, JEPI, JEPQ, GLD
+
+등록되지 않은 종목(예: `/stock/AMD`)은 "찾을 수 없음"으로 처리합니다. 무제한 검색 사이트가 아닙니다.
+
+---
+
+## 3. 데이터 제공처
+
+| 데이터 | 제공처 | 키 | 비고 |
+|---|---|---|---|
+| 시세(다종목 일괄) | Yahoo Finance v7 quote | 불필요(쿠키+crumb 자동) | 실패하면 v8 chart 메타데이터, 그다음 Finnhub `/quote` 순으로 대체 |
+| OHLCV(1분봉~월봉), 배당·분할 이벤트 | Yahoo Finance v8 chart | 불필요 | 1분봉 7일, 5~30분봉 60일, 1시간봉 730일, 일봉 이상 전체 |
+| 배당 지급일·선언일·기준일 | Nasdaq.com API | 불필요 | Yahoo 기록과 배당락일 기준으로 병합 |
+| 배당 지급 주기·유형(정기/특별/자본이득) | Polygon.io(Massive) | `POLYGON_API_KEY` | 선택 사항. 무료 플랜은 분당 5회 |
+| 기업 지표(PER, 선행 PER, PBR, ROE 등), ETF 총보수·운용자산·NAV·편입 종목·섹터·과거 수익률, 실적 예정일 | Yahoo Finance v10 quoteSummary | 불필요 | |
+| 재무제표(매출, 영업이익, 순이익, EPS, 영업현금흐름, 설비투자, 자기자본) | SEC EDGAR XBRL companyfacts | `SEC_USER_AGENT` | 미국 정부 공식 공시. 분기 값은 누적값 차이로 계산하고 "계산값"으로 표시 |
+| 기본 재무 지표(보완) | Finnhub `stock/metric` | `FINNHUB_API_KEY` | |
+| ETF 프로필(보완) | Alpha Vantage `ETF_PROFILE` | `ALPHAVANTAGE_API_KEY` | 하루 예산 안에서 순환 갱신 |
+| 종목 뉴스 | Yahoo 검색, Finnhub company-news(요약 포함), Polygon news, Google News RSS | Finnhub·Polygon 키 | ETF와 기초자산은 검색어(예: "gold price")로 보완 |
+| 시장 뉴스 | Finnhub general, Yahoo 검색, Google News RSS | | |
+| 실적 발표 일정 | Finnhub calendar/earnings | `FINNHUB_API_KEY` | 키가 없으면 Yahoo 기준 M7 일정만 수집 |
+| 경제지표 발표 일정, 국채금리·달러지수 | FRED | `FRED_API_KEY` | CPI, 고용, GDP, PCE, PPI, 소매판매, JOLTS, 실업수당, FOMC 등 |
+| 미국 증시 휴장일·조기 폐장 | 사이트 계산 (NYSE 규칙) | 불필요 | 규칙 외 임시 휴장은 `src/config/market-calendar-overrides.ts`에 추가 |
+| (선택) 브리핑 서술·뉴스 한국어 요약 | Anthropic Claude API | `ANTHROPIC_API_KEY` | 수집된 근거 자료만 전달합니다. 근거 ID를 검증하지 못한 문장은 버립니다. |
+
+제공처별 이용 약관, 호출 한도, 상업적 이용 조건은 [`docs/data-sources.md`](docs/data-sources.md)에 정리했습니다.
+**Yahoo Finance, Nasdaq.com, Google News RSS는 공식 API가 아닙니다.** 개인적·비상업적 용도로만 쓰는 것을 전제로 하며, 예고 없이 막히거나 형식이 바뀔 수 있습니다.
+
+### 데이터 신뢰 원칙 (구현 방식)
+- 화면의 모든 수치에는 출처와 갱신 시각이 붙습니다.
+- 최신 조회에 실패하면 저장된 과거 데이터에 **"최신 조회 실패 — 저장된 과거 데이터 표시 중"** 경고를 붙입니다. 과거 데이터를 현재 데이터처럼 보여 주지 않습니다.
+- 데이터가 없으면 "데이터 미제공"으로 표시하고 예시 값이나 추정 값을 채우지 않습니다.
+- 뉴스는 수집 구간 밖의 기사를 오늘 뉴스로 표시하지 않습니다. 게시 시각은 항상 함께 표시합니다.
+
+---
+
+## 4. 자동 업데이트(스케줄러)
+
+워커(`npm run worker`)가 미국 동부 시간과 NYSE 휴장일·조기 폐장을 반영해 다음 작업을 실행합니다.
+
+| 작업 | 기본 일정 (ET) | 내용 |
+|---|---|---|
+| `refresh_quotes` | 거래일 04:00~20:00, 15분마다 (휴장일은 10:00 1회) | 지원 종목, 시장 지표, ETF 상위 편입 종목 시세 |
+| `collect_news` | 매일 06:00~22:00, 2시간마다 | 종목·시장 뉴스 수집, 관련 이유 분류 |
+| `collect_reference` | 매일 07:00 | 기업·ETF 지표(20시간 이내 수집분은 생략), SEC 재무(주 1회), 실적·경제 일정, 거시 지표 |
+| `collect_eod` | 정규장 마감 15분 후 | 일봉, 5분봉, 배당 상세(인컴·배당 ETF는 매일, 나머지는 주 1회) |
+| `briefing_intraday` | 거래일 12:30 | 장중 브리핑. "확정 전 데이터"로 표시 |
+| `briefing_close` | 정규장 마감 25분 후 (조기 폐장일은 13:00 기준) | 일봉이 마감 이후 갱신됐는지 확인한 뒤 장 마감 후 브리핑 생성 |
+| `briefing_non_trading` | 주말·공휴일 10:00 | 마지막 거래일 기준 정보와 새 뉴스만 정리합니다. 당일 주가 분석은 만들지 않습니다. |
+| `cleanup` | 매일 03:30 | 만료 캐시, 오래된 분봉·뉴스·로그 정리 |
+
+- 생성 과정: 실제 주가·거래량 수집 → 뉴스·기업 정보 수집 → 일정·분배금 확인 → 종목별 정리 → 브리핑 생성 → 브리핑과 근거 자료 저장(`briefings` 테이블) → 웹사이트 표시.
+- 화면을 새로고침해도 새 분석 글을 만들지 않습니다. 저장된 브리핑을 보여 줍니다.
+- 작업 결과는 `job_runs`에 슬롯 단위로 기록됩니다. 실패하면 15분 간격으로 최대 4회 재시도합니다.
+- 제공처 연결이 3회 연속 실패하면 2분 동안 호출을 멈춥니다(서킷 브레이커). 장애 중에 작업이 재시도 대기로 오래 멈추는 것을 막기 위해서입니다.
+- 워커가 늦게 시작해도 마지막 완료 거래일의 장 마감 데이터와 브리핑을 따라잡습니다(4일 이내).
+- 일정은 설정 페이지에서 바꿀 수 있습니다(관리자 토큰 필요). 수동 실행은 `npm run job -- <작업명> [--force] [--date YYYY-MM-DD] [--symbols QQQ,JEPI]`로 합니다.
+
+---
+
+## 5. 설치·실행
+
+요구 사항은 **Node.js 22.13 이상**입니다. 내장 `node:sqlite`를 쓰므로 네이티브 모듈 빌드가 필요 없습니다.
+
+```bash
+npm ci
+cp .env.example .env        # 필요한 키 입력 (아래 6번 참고)
+npm run build
+
+# 웹 서버 + 스케줄러를 함께 실행
+npm run start:all           # http://localhost:3000
+
+# 또는 따로 실행
+npm start                   # 웹 서버
+npm run worker              # 스케줄러 (자동 업데이트·브리핑 생성)
+
+# 처음 데이터를 바로 채우려면
+npm run job -- all          # 시세 → 참조 데이터 → 마감 데이터 → 뉴스 → 장 마감 후 브리핑
+```
+
+개발 모드는 `npm run dev`입니다. 테스트는 다음과 같습니다.
+
+```bash
+npm run typecheck
+npm test                    # 단위 테스트 (지표·배당 계산·휴장일·파서·재무 계산·스케줄)
+npm run build && npm run test:e2e   # 합성 데이터 모의 서버로 전체 흐름 + 브라우저 검증
+```
+
+> `test:e2e`는 `tests/e2e/mock-upstream.ts`의 **합성(가짜) 데이터 서버**를 사용합니다. 테스트에만 쓰고, 애플리케이션 코드는 이 서버를 참조하지 않습니다.
+
+---
+
+## 6. 필요한 API 키와 설정
+
+| 변수 | 필수 여부 | 발급처 | 없을 때 |
+|---|---|---|---|
+| (없음) | — | — | Yahoo·Nasdaq·Google News만으로 시세, 차트, 배당 기록, ETF·기업 지표, 뉴스 헤드라인이 동작합니다. |
+| `SEC_USER_AGENT` | 권장 | 키 발급 없음. `"사이트명 이메일"` 형식 | M7 분기·연간 재무제표 표가 표시되지 않습니다. |
+| `FINNHUB_API_KEY` | 권장 | https://finnhub.io (무료 가입) | 요약이 있는 기업 뉴스와 전체 실적 일정이 빠집니다. |
+| `FRED_API_KEY` | 권장 | https://fred.stlouisfed.org/docs/api/api_key.html (무료) | 경제지표 발표 일정과 FRED 국채금리가 빠집니다. |
+| `POLYGON_API_KEY` | 선택 | https://massive.com (구 polygon.io) | 지급 주기·유형 정보가 Nasdaq·Yahoo 기록 기반 판정으로만 제공됩니다. |
+| `ALPHAVANTAGE_API_KEY` | 선택 | https://www.alphavantage.co | Yahoo에서 ETF 편입 종목을 못 받을 때 보완할 수 없습니다. |
+| `ANTHROPIC_API_KEY` | 선택 | https://console.anthropic.com | AI 서술과 뉴스 한국어 요약 없이 규칙 기반 브리핑만 생성합니다. |
+| `ADMIN_TOKEN` | 선택 | 임의의 긴 문자열 | 설정 페이지의 일정 변경·수동 실행을 쓸 수 없습니다. |
+
+API 키는 서버 환경변수로만 읽습니다(`src/lib/env.ts`). 클라이언트 번들에 포함되지 않고 로그에도 남지 않습니다(마스킹).
+
+---
+
+## 7. 배포
+
+### 7-1. GitHub Pages로 무료 운영 (PC를 켜 두지 않아도 됨)
+
+GitHub Actions가 정해진 시각에 데이터를 수집하고 브리핑을 만든 뒤, 정적 사이트로 빌드해 GitHub Pages에 올립니다.
+공개 저장소에서는 Actions와 Pages가 무료입니다(2026년 기준, 요금 정책은 GitHub 공지를 확인하세요).
+
+**처음 한 번 설정**
+1. 저장소를 공개로 바꿉니다: Settings → General → Danger Zone → Change visibility → Public
+2. 이 워크플로가 있는 브랜치를 기본 브랜치(main)에 병합합니다. 예약 실행은 기본 브랜치에서만 동작합니다.
+3. Settings → Pages → Build and deployment → Source를 **GitHub Actions**로 바꿉니다.
+4. Settings → Secrets and variables → Actions → New repository secret에서 키를 넣습니다.
+   - `SEC_USER_AGENT` (예: `MyStockSite 본인이메일@example.com`), `FINNHUB_API_KEY`, `FRED_API_KEY`
+   - 선택: `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `ANTHROPIC_API_KEY`(유료)
+5. Actions 탭 → **정적 사이트 갱신** → Run workflow → mode에서 `all`을 골라 실행합니다(처음 전체 수집, 10~20분).
+6. 끝나면 `https://<GitHub 사용자명>.github.io/<저장소 이름>/` 에서 열립니다.
+
+**동작 방식**
+- 예약 실행 시각(한국 시간): 평일 22:45·00:45·02:45·04:45(미국 장중), 07:20(장 마감 후 브리핑), 주말 00:30. 시각은 `.github/workflows/pages.yml`의 `cron`(UTC)에서 바꿉니다.
+- 실행할 때마다 `npm run job -- due`로 그 시각에 해야 할 작업(시세·뉴스·장 마감 데이터·브리핑)을 처리합니다.
+- 수집한 DB는 압축해서 `data` 브랜치에 저장하고 다음 실행 때 불러옵니다. 이 브랜치는 매번 덮어씁니다.
+- 화면 위에 "정적 스냅샷" 안내와 페이지 생성 시각이 표시됩니다. 실시간 시세가 아니며 시세에는 "수집 시점 스냅샷"이라고 표시됩니다.
+- API 키는 GitHub Secrets에만 있고 사이트 파일에는 들어가지 않습니다.
+
+**제약**
+- GitHub 사정으로 예약 실행이 수십 분 늦어지거나 건너뛰어질 수 있습니다.
+- 공개 저장소에 60일 동안 활동이 없으면 GitHub이 예약 실행을 멈춥니다. 워크플로가 매번 다시 활성화를 시도하지만 효과는 보장되지 않습니다. 멈추면 Actions 탭에서 다시 켜면 됩니다.
+- Yahoo·Nasdaq 같은 비공식 제공처가 GitHub 서버의 접속을 막을 수 있습니다. 사이트의 데이터 상태 화면이나 Actions 실행 기록에서 확인하세요.
+- 1분봉, 설정 화면의 일정 변경·수동 실행, 브리핑 기록(최근 30건 초과)은 정적 사이트에서 제공하지 않습니다.
+- 사이트 주소를 아는 사람은 누구나 볼 수 있습니다.
+
+로컬에서 정적 사이트를 미리 확인하려면 `BASE_PATH=/stock_chart npm run build:static` 후 `npm run test:e2e:static`을 실행합니다.
+
+### 7-2. 서버에 배포
+
+이 사이트는 **SQLite 파일과 상시 실행 워커**를 쓰므로, 디스크가 유지되는 단일 서버(VM·VPS·컨테이너)에 배포하는 것을 권장합니다.
+
+**Docker**
+```bash
+cp .env.example .env   # 키 입력
+docker compose up -d --build     # http://서버:3000, 데이터는 ./data 에 저장
+```
+
+**일반 서버 (systemd·pm2 등)**
+```bash
+npm ci && npm run build
+DATABASE_PATH=/var/lib/usi/app.db npm run start:all
+```
+
+- 서버에서 데이터 제공처 호스트로 나가는 HTTPS가 허용되어야 합니다: `query1/query2.finance.yahoo.com`, `fc.yahoo.com`, `api.nasdaq.com`, `data.sec.gov`, `finnhub.io`, `api.polygon.io`, `api.stlouisfed.org`, `www.alphavantage.co`, `news.google.com`, `api.anthropic.com`.
+- Vercel 같은 서버리스 환경은 파일 DB와 상시 워커를 유지할 수 없어 그대로는 맞지 않습니다. 쓰려면 외부 DB(예: Postgres)와 외부 cron으로 바꿔야 합니다.
+- 클라우드 IP에서는 Yahoo·Nasdaq 비공식 엔드포인트가 막힐 수 있습니다. 데이터 상태 페이지에서 제공처별 실패를 확인하세요.
+
+---
+
+## 8. 무료 데이터의 제약과 추가 비용
+
+| 기능 | 무료로 가능한 범위 | 제약·유료 대안 |
+|---|---|---|
+| 실시간 시세 | 제공처(Yahoo)가 응답에 밝힌 지연 시간을 그대로 표시. 사이트 갱신 주기는 장중 15분(워커), 상세 화면은 조회 시 최대 60초 캐시 | 체결 단위 실시간 스트리밍은 Polygon·Finnhub 유료 플랜 |
+| 분봉 | 1분봉 7일, 5~30분봉 60일 | 더 긴 분봉 기록은 유료 |
+| ETF 총보수·편입 종목 | Yahoo(비공식), Alpha Vantage(하루 25회) | 운용사 공식 일별 보유 내역 파일은 운용사마다 형식이 달라 미구현 |
+| 커버드콜 옵션 포지션(행사가·비율), 분배금 구성(ROC 비율) | 제공되지 않음 → 화면에 "운용사 공시 참조"로 안내 | 운용사 19a-1 공시·보유 내역 파싱 또는 유료 데이터 |
+| 경제지표 컨센서스·실제 발표치 | FRED에서는 발표 일정만 | 컨센서스는 유료 경제 캘린더 API 필요 |
+| 뉴스 요약 | Finnhub·Polygon 요약문. 그 외는 제목만 | 기사 본문 요약은 라이선스가 있는 뉴스 API 필요 |
+| AI 브리핑 서술 | — | **유료**: Anthropic API 토큰 과금. 기본 모델 `claude-opus-5-5`(입력 $4 / 출력 $20 per 1M tokens). 브리핑 1건에 입력 약 5천, 출력 약 1.5천 토큰으로 가정하면 장 마감 후 48건에 하루 약 $2.5 (월 약 $55) 정도로 추정됩니다. `LLM_MODEL=claude-haiku-5-5`로 바꾸면 크게 줄어듭니다. `LLM_SESSIONS`로 대상을 줄일 수도 있습니다. |
+| 상업적 이용 | — | Yahoo·Nasdaq·Google News는 비상업적 용도 전제입니다. Finnhub·Polygon·Alpha Vantage 무료 플랜도 상업적 이용 시 유료 계약이 필요합니다. |
+
+---
+
+## 9. 프로젝트 구조
+
+```
+src/
+  config/instruments.ts          지원 종목·시장 지표 설정 (종목 추가/제거)
+  config/market-calendar-overrides.ts  임시 휴장·조기 폐장
+  lib/
+    providers/                   제공처별 API 클라이언트 (yahoo, nasdaq, sec, finnhub, polygon, fred, alphavantage, googlenews)
+    data/                        수집·저장·조회 (quotes, bars, dividends, news, profile, events)
+    briefing/                    브리핑 생성기 (symbol, market, risks, llm, store, types)
+    jobs/                        작업 정의·스케줄 판정·실행 기록
+    indicators.ts                SMA/EMA/RSI/MACD/볼린저/VWAP/변동성/낙폭/지지·저항
+    dividend-analytics.ts        지급 주기 판정·TTM·연환산·분할 조정
+    performance.ts               가격·총수익률, CAGR, 변동성, 최대 낙폭
+    financials.ts                SEC XBRL → 분기/연간 재무 시계열
+    market-calendar.ts           NYSE 휴장일·조기 폐장·시장 상태
+    http.ts                      호출 간격 제한·재시도·서킷 브레이커·호출 로그
+    db.ts                        SQLite 스키마·헬퍼
+    compare-core.ts              종목 비교 계산 (서버·정적 사이트 브라우저 공용)
+    static-mode.ts, page-mode.ts 정적 사이트(GitHub Pages) 빌드 여부·경로, 페이지 렌더링 방식
+    client/data-api.ts           화면 데이터 조회 (서버 모드 /api/*, 정적 모드 data/*.json)
+  app/                           페이지와 API (Next.js App Router)
+  components/                    차트, 브리핑, 배당, 재무, ETF, 비교 UI
+scripts/                         worker, run-job(due 포함), start-all, export-static(정적 사이트 데이터)
+.github/workflows/pages.yml      GitHub Actions 예약 수집 → 정적 사이트 빌드 → GitHub Pages 배포
+tests/                           단위 테스트, e2e(합성 데이터 모의 서버 + Playwright), 정적 사이트 e2e
+```
+
+기술 스택: Next.js 16(App Router), React 19, TypeScript, Tailwind CSS 4, Node.js 내장 SQLite, Lightweight Charts 5, Vitest, Playwright.

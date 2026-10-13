@@ -1,0 +1,43 @@
+{
+  "name": "us-stock-insight",
+  "version": "0.1.0",
+  "private": true,
+  "description": "미국 주식·ETF 전문 분석 웹사이트 (차트, 거래량, 배당·분배금, 종목별 일일 브리핑)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "build:static": "STATIC_EXPORT=1 ON_DEMAND_FETCH=0 next build && STATIC_EXPORT=1 node --disable-warning=ExperimentalWarning --import tsx scripts/export-static.ts",
+    "start": "NODE_OPTIONS=--disable-warning=ExperimentalWarning next start",
+    "worker": "node --disable-warning=ExperimentalWarning --import tsx scripts/worker.ts",
+    "job": "node --disable-warning=ExperimentalWarning --import tsx scripts/run-job.ts",
+    "start:all": "node scripts/start-all.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:e2e": "tsx tests/e2e/run.ts",
+    "test:e2e:static": "tsx tests/e2e/static.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
+    "lightweight-charts": "^5.2.1",
+    "next": "^16.4.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "postcss": "^8.5.30",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.4"
+  }
+}
