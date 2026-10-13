@@ -196,7 +196,8 @@ export function buildSymbolBriefing(symbol: string, session: SessionType, tradeD
     const idx = daily.findIndex((d) => d.date === tradeDate);
     const prior20 = (idx >= 0 ? daily.slice(Math.max(0, idx - 20), idx) : daily.filter((d) => d.date < tradeDate).slice(-20)).map((d) => d.bar.v);
     const avg20 = prior20.length >= 10 ? prior20.reduce((a, b) => a + b, 0) / prior20.length : null;
-    if (isNum(dd.volume)) {
+    // 거래량 0 은 제공처 값 누락으로 보고 계산에 쓰지 않는다 (상장 ETF·주식이 하루 거래가 0일 가능성은 사실상 없음)
+    if (isNum(dd.volume) && dd.volume > 0) {
       volRatio = avg20 ? dd.volume / avg20 : null;
       vId = ev.add("V", {
         type: "volume",
@@ -217,7 +218,7 @@ export function buildSymbolBriefing(symbol: string, session: SessionType, tradeD
           ),
         );
       }
-    } else limitations.push("거래량 데이터 미제공");
+    } else limitations.push(isNum(dd.volume) ? "제공처 거래량 값이 0으로 와서 거래량 분석을 생략했습니다" : "거래량 데이터 미제공");
     // 최근 흐름
     const upto = daily.filter((d) => d.date <= tradeDate).slice(-6);
     const recent = upto.slice(1).map((d, i) => ({

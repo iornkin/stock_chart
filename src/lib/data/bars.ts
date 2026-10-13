@@ -7,7 +7,7 @@ import { env } from "../env";
 import { marketStatus } from "../market-calendar";
 import * as yahoo from "../providers/yahoo";
 import type { Bar, DataMeta, Interval } from "../types";
-import { etDate } from "../time";
+import { etDate, etToUtc } from "../time";
 import { saveYahooDividendsAndSplits } from "./dividends";
 
 export const INTERVALS: Interval[] = ["1m", "5m", "15m", "30m", "60m", "1d", "1wk", "1mo"];
@@ -45,6 +45,11 @@ function saveBars(symbol: string, interval: Interval, bars: Bar[], source: strin
       if (bars.length) run("DELETE FROM bars WHERE symbol=? AND interval=? AND ts>=?", symbol, interval, bars[0].t);
     }
     for (const b of bars) {
+      if (interval === "1d") {
+        // 같은 거래일(ET)의 봉은 하나만 남긴다 (제공처가 시각을 달리해 같은 날 봉을 다시 주는 경우)
+        const dayStart = Math.floor(etToUtc(etDate(b.t * 1000)) / 1000);
+        run("DELETE FROM bars WHERE symbol=? AND interval='1d' AND ts>=? AND ts<? AND ts<>?", symbol, dayStart, dayStart + 86400, b.t);
+      }
       run(
         "INSERT INTO bars(symbol, interval, ts, open, high, low, close, volume, adjclose) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(symbol, interval, ts) DO UPDATE SET open=excluded.open, high=excluded.high, low=excluded.low, close=excluded.close, volume=excluded.volume, adjclose=excluded.adjclose",
         symbol,

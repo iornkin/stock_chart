@@ -224,11 +224,20 @@ export async function fetchChart(
     const now = Math.floor(Date.now() / 1000);
     params.set("period1", String(now - (Number(days[1]) - 1) * 86400));
     params.set("period2", String(now));
+  } else if (range === "max") {
+    // range=max 는 Yahoo 가 긴 기록을 월봉 등으로 줄여 돌려주므로 시작·끝 시각을 직접 지정한다 (1900-01-01 ~ 현재)
+    params.set("period1", "-2208994789");
+    params.set("period2", String(Math.floor(Date.now() / 1000)));
   } else params.set("range", range);
   if (opts.events) params.set("events", "div|split");
   const url = `${env.yahooQuery1}/v8/finance/chart/${encodeURIComponent(symbol)}?${params}`;
   const json = await requestJson<V8Chart>(P, url, { headers: { "User-Agent": BROWSER_UA } });
-  return parseChart(symbol, json);
+  const res = parseChart(symbol, json);
+  // 요청한 간격과 다른 간격의 봉을 저장하지 않는다 (예: 일봉 요청에 월봉 응답)
+  const g = typeof res.meta.dataGranularity === "string" ? res.meta.dataGranularity : null;
+  const same = (a: string, b: string) => a === b || (a === "60m" && b === "1h") || (a === "1h" && b === "60m");
+  if (g && !same(g, interval)) throw new ProviderError(P, `요청한 ${interval} 대신 ${g} 간격 데이터가 반환되어 저장하지 않았습니다`);
+  return res;
 }
 
 /** v7 quote 실패 시 대체: chart 메타데이터로 시세 구성 (crumb 불필요) */

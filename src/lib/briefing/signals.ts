@@ -90,7 +90,7 @@ export function signalStateAt(daily: { date: string; bar: Bar }[], idx: number):
     dailyStd20: std,
     vol20: realizedVol(closes, 20),
     vol250: closes.length > 60 ? realizedVol(closes, Math.min(250, closes.length - 1)) : null,
-    volRatio: avgVol ? hist[hist.length - 1].bar.v / avgVol : null,
+    volRatio: avgVol && hist[hist.length - 1].bar.v > 0 ? hist[hist.length - 1].bar.v / avgVol : null,
     ret5: closes.length > 5 ? (close / closes[closes.length - 6] - 1) * 100 : null,
     ret20: closes.length > 20 ? (close / closes[closes.length - 21] - 1) * 100 : null,
     streak,
