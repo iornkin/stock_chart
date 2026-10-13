@@ -248,7 +248,7 @@ function chartJson(symbol: string, interval: string, range: string) {
     chart: {
       result: [
         {
-          meta: { currency: "USD", symbol, exchangeName: "PCX", fullExchangeName: q.fullExchangeName, instrumentType: q.quoteType, regularMarketPrice: q.regularMarketPrice, regularMarketTime: q.regularMarketTime, chartPreviousClose: q.regularMarketPreviousClose, longName: q.longName, fiftyTwoWeekHigh: q.fiftyTwoWeekHigh, fiftyTwoWeekLow: q.fiftyTwoWeekLow, regularMarketVolume: q.regularMarketVolume },
+          meta: { dataGranularity: interval, currency: "USD", symbol, exchangeName: "PCX", fullExchangeName: q.fullExchangeName, instrumentType: q.quoteType, regularMarketPrice: q.regularMarketPrice, regularMarketTime: q.regularMarketTime, chartPreviousClose: q.regularMarketPreviousClose, longName: q.longName, fiftyTwoWeekHigh: q.fiftyTwoWeekHigh, fiftyTwoWeekLow: q.fiftyTwoWeekLow, regularMarketVolume: q.regularMarketVolume },
           timestamp: bars.map((b) => b.t),
           events,
           indicators: {
@@ -378,7 +378,12 @@ const server = http.createServer((req, res) => {
       return send(res, 200, { quoteResponse: { result, error: null } });
     }
     const chartM = p.match(/^\/yahoo1\/v8\/finance\/chart\/(.+)$/);
-    if (chartM) return send(res, 200, chartJson(decodeURIComponent(chartM[1]), qp("interval"), qp("range")));
+    if (chartM) {
+      // 실제 Yahoo 처럼 range=max 일봉·주봉 요청에는 월봉으로 줄여 응답 (사이트가 이 방식을 쓰지 않는지 확인용)
+      const iv = qp("interval");
+      const g = qp("range") === "max" && (iv === "1d" || iv === "1wk") ? "1mo" : iv;
+      return send(res, 200, chartJson(decodeURIComponent(chartM[1]), g, qp("range")));
+    }
     const sumM = p.match(/^\/yahoo2\/v10\/finance\/quoteSummary\/(.+)$/);
     if (sumM) return send(res, 200, summaryJson(decodeURIComponent(sumM[1]), qp("modules").split(",")));
     if (p === "/yahoo2/v1/finance/search") return send(res, 200, newsJson(qp("q")));

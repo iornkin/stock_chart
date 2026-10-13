@@ -201,6 +201,21 @@ export function getDb(): DatabaseSync {
 function migrate(db: DatabaseSync) {
   const cols = (t: string) => new Set((db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name));
   if (!cols("news").has("image")) db.exec("ALTER TABLE news ADD COLUMN image TEXT");
+  // 2026-10: Yahoo range=max 응답이 월봉으로 줄어든 채 일·주봉으로 저장된 문제 → 한 번 지우고 다시 받는다
+  const flag = db.prepare("SELECT value FROM settings WHERE key='migration_bars_granularity_v1'").get();
+  if (!flag) {
+    db.exec("BEGIN");
+    try {
+      db.exec("DELETE FROM bars WHERE interval IN ('1d','1wk','1mo')");
+      db.exec("DELETE FROM bar_meta WHERE interval IN ('1d','1wk','1mo')");
+      // 장 마감 데이터와 그 데이터로 만든 장 마감 브리핑이 다음 실행 때 다시 만들어지도록 실행 기록 제거
+      db.exec("DELETE FROM job_runs WHERE job IN ('collect_eod','briefing_close')");
+      db.prepare("INSERT INTO settings(key, value, updated_at) VALUES('migration_bars_granularity_v1', '1', ?)").run(Date.now());
+      db.exec("COMMIT");
+    } catch {
+      db.exec("ROLLBACK");
+    }
+  }
 }
 
 /**
