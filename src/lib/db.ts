@@ -185,9 +185,10 @@ export function getDb(): DatabaseSync {
   if (globalThis.__stockDb && globalThis.__stockDbPath === file) return globalThis.__stockDb;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
+  // 다른 프로세스(정적 빌드 작업자·워커)가 같은 DB 를 동시에 열 수 있으므로 잠금 대기를 가장 먼저 설정
+  db.exec("PRAGMA busy_timeout = 10000;");
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA synchronous = NORMAL;");
-  db.exec("PRAGMA busy_timeout = 10000;");
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec(SCHEMA);
   migrate(db);
@@ -197,24 +198,29 @@ export function getDb(): DatabaseSync {
   return db;
 }
 
-/** 기존 DB 에 새 열 추가 (CREATE TABLE IF NOT EXISTS 는 열을 추가하지 않으므로) */
+/**
+ * 기존 DB 에 새 열 추가·일회성 정리 (CREATE TABLE IF NOT EXISTS 는 열을 추가하지 않으므로)
+ * 여러 프로세스가 동시에 열 수 있어(정적 빌드 작업자 등) 쓰기 잠금(BEGIN IMMEDIATE)을 잡은 뒤 다시 확인하고 바꾼다.
+ */
 function migrate(db: DatabaseSync) {
   const cols = (t: string) => new Set((db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name));
-  if (!cols("news").has("image")) db.exec("ALTER TABLE news ADD COLUMN image TEXT");
   // 2026-10: Yahoo range=max 응답이 월봉으로 줄어든 채 일·주봉으로 저장된 문제 → 한 번 지우고 다시 받는다
-  const flag = db.prepare("SELECT value FROM settings WHERE key='migration_bars_granularity_v1'").get();
-  if (!flag) {
-    db.exec("BEGIN");
-    try {
+  const barsFixed = () => Boolean(db.prepare("SELECT value FROM settings WHERE key='migration_bars_granularity_v1'").get());
+  if (cols("news").has("image") && barsFixed()) return;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    if (!cols("news").has("image")) db.exec("ALTER TABLE news ADD COLUMN image TEXT");
+    if (!barsFixed()) {
       db.exec("DELETE FROM bars WHERE interval IN ('1d','1wk','1mo')");
       db.exec("DELETE FROM bar_meta WHERE interval IN ('1d','1wk','1mo')");
       // 장 마감 데이터와 그 데이터로 만든 장 마감 브리핑이 다음 실행 때 다시 만들어지도록 실행 기록 제거
       db.exec("DELETE FROM job_runs WHERE job IN ('collect_eod','briefing_close')");
       db.prepare("INSERT INTO settings(key, value, updated_at) VALUES('migration_bars_granularity_v1', '1', ?)").run(Date.now());
-      db.exec("COMMIT");
-    } catch {
-      db.exec("ROLLBACK");
     }
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
   }
 }
 
