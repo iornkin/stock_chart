@@ -14,6 +14,7 @@
 import { daysBetween } from "@/lib/time";
 import { annualVolPct, cagrPct, dailyReturns, drawdown, periodReturns, sharpe, xirrPct, yearsBetween } from "./metrics";
 import { closeOn, indexOnOrAfter, indexOnOrBefore, type PriceSeries } from "./series";
+import { capitalGainsTax, CostBook, type CostMethod } from "@/lib/portfolio/tax";
 
 export type Rebalance = "none" | "monthly" | "quarterly" | "semiannual" | "annual";
 export type ContributionTiming = "month_start" | "month_end";
@@ -49,6 +50,26 @@ export interface BacktestConfig {
   riskFreePct: number;
   /** true 면 분배금을 아예 반영하지 않는다 (가격 수익률 비교용) */
   ignoreDividends?: boolean;
+  /**
+   * 해외주식 양도소득세 (한국 거주자 가정): 연간 손익통산 → 250만 원 공제 → 22%, 다음 해 5월 첫 거래일에 납부.
+   * 환율은 날짜별 원/달러 종가(fx) 또는 직접 입력한 고정 환율(fixedFx)
+   */
+  capitalGains?: { method: CostMethod; fx: PriceSeries | null; fixedFx: number | null } | null;
+}
+
+export interface CapitalGainsResult {
+  method: CostMethod;
+  fxBasis: "historical" | "fixed";
+  years: { year: string; netGainKrw: number; taxKrw: number; paidOn: string | null; paidUsd: number }[];
+  /** 기간 중 납부한 세금 (납부일 환율로 달러 환산) */
+  paidUsd: number;
+  /** 기간 말 아직 납부 전인 세금 (원화) */
+  unpaidKrw: number;
+  /** 기간 마지막 날 전부 판다면 추가로 생기는 세금 (원화) */
+  liquidationExtraKrw: number;
+  /** 미납 세금과 전부 매도 시 세금을 뺀 가치 */
+  afterTaxLiquidationUsd: number;
+  fxEnd: number;
 }
 
 export interface CoverageItem {
@@ -167,6 +188,7 @@ export interface BacktestResult {
   holdings: HoldingResult[];
   costs: number;
   contributions: number;
+  capitalGains: CapitalGainsResult | null;
   notes: string[];
 }
 
@@ -226,8 +248,40 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
     return p;
   });
 
+  // 양도소득세 준비 (환율이 기간 전체에 있어야 함)
+  const cg = cfg.capitalGains ?? null;
+  let fxArr: Float64Array | null = null;
+  if (cg) {
+    fxArr = new Float64Array(n);
+    if (cg.fixedFx && cg.fixedFx > 0) fxArr.fill(cg.fixedFx);
+    else {
+      const fx = cg.fx;
+      if (!fx || !fx.dates.length) return { ok: false, problems: ["양도소득세 계산에 필요한 원/달러 환율 기록이 아직 없습니다. 고정 환율을 직접 입력하세요."], coverage: cov };
+      if (fx.dates[0] > cal[0]) return { ok: false, problems: [`양도소득세 계산에 필요한 원/달러 환율 기록이 ${fx.dates[0]}부터 있습니다. 시작일을 늦추거나 고정 환율을 입력하세요.`], coverage: cov };
+      for (let i = 0; i < n; i++) fxArr[i] = (closeOn(fx, cal[i]) as { close: number }).close;
+    }
+  }
+  const books = cg ? symbols.map(() => new CostBook(cg.method)) : null;
+  const yearGain = new Map<string, number>();
+  const taxYears: CapitalGainsResult["years"] = [];
+  const settled = new Set<string>();
+  let taxPaidUsd = 0;
+
   const shares = new Array<number>(k).fill(0);
   const divGross = new Array<number>(k).fill(0);
+  const addShares = (s: number, q: number, i: number) => {
+    shares[s] += q;
+    if (books && fxArr) books[s].buy(q, q * px[s][i], q * px[s][i] * fxArr[i]);
+  };
+  const removeShares = (s: number, q: number, i: number) => {
+    if (!(q > 0)) return;
+    shares[s] -= q;
+    if (books && fxArr) {
+      const c = books[s].sell(q);
+      const y = cal[i].slice(0, 4);
+      yearGain.set(y, (yearGain.get(y) ?? 0) + q * px[s][i] * fxArr[i] - c.krw);
+    }
+  };
   let cash = 0;
   let costs = 0;
   let contributedTotal = cfg.initial;
@@ -244,7 +298,7 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
   const buyByWeight = (amount: number, i: number) => {
     for (let s = 0; s < k; s++) {
       const a = amount * w[s];
-      shares[s] += (a * (1 - cost)) / px[s][i];
+      addShares(s, (a * (1 - cost)) / px[s][i], i);
       costs += a * cost;
     }
   };
@@ -278,10 +332,38 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
         m.net += net;
         monthInc.set(ym, m);
         if (cfg.reinvest) {
-          shares[s] += (net * (1 - cost)) / px[s][i];
+          addShares(s, (net * (1 - cost)) / px[s][i], i);
           costs += net * cost;
           reinvested += net;
         } else cash += net;
+      }
+    }
+    // 1-1) 양도소득세 납부: 5월 첫 거래일에 지난해까지의 세금 (현금 → 부족하면 보유 비율대로 매도)
+    if (cg && fxArr && cal[i].slice(5, 7) === "05" && cal[i - 1].slice(5, 7) !== "05") {
+      const thisYear = cal[i].slice(0, 4);
+      for (const y of [...yearGain.keys()].sort()) {
+        if (y >= thisYear || settled.has(y)) continue;
+        settled.add(y);
+        const net = yearGain.get(y) ?? 0;
+        const taxKrw = capitalGainsTax(net).taxKrw;
+        const usd = taxKrw / fxArr[i];
+        if (usd > 0) {
+          let left = usd;
+          const fromCash = Math.min(cash, left);
+          cash -= fromCash;
+          left -= fromCash;
+          const inv = shares.reduce((a, sh, s) => a + sh * px[s][i], 0);
+          if (left > 0 && inv > 0) {
+            const f = Math.min(1, left / (inv * (1 - cost)));
+            for (let s = 0; s < k; s++) {
+              const q = shares[s] * f;
+              costs += q * px[s][i] * cost;
+              removeShares(s, q, i);
+            }
+          }
+          taxPaidUsd += usd;
+        }
+        taxYears.push({ year: y, netGainKrw: net, taxKrw, paidOn: cal[i], paidUsd: usd });
       }
     }
     // 2) 추가 납입
@@ -305,7 +387,11 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
       for (let s = 0; s < k; s++) traded += Math.abs(total * w[s] - cur[s]);
       const fee = traded * cost;
       costs += fee;
-      for (let s = 0; s < k; s++) shares[s] = ((total - fee) * w[s]) / px[s][i];
+      for (let s = 0; s < k; s++) {
+        const target = ((total - fee) * w[s]) / px[s][i];
+        if (target > shares[s]) addShares(s, target - shares[s], i);
+        else removeShares(s, shares[s] - target, i);
+      }
     } else if (flow > 0) buyByWeight(flow, i);
     if (flow > 0) {
       contributedTotal += flow;
@@ -334,6 +420,35 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
   const invested = endValues.reduce((a, b) => a + b, 0);
   if (!cfg.reinvest && cash > 0) notes.push("재투자하지 않은 세후 분배금은 이자 없는 현금으로 평가금액에 포함했습니다.");
   if (years < 1) notes.push("기간이 1년 미만이라 연환산 수익률(CAGR)은 표시하지 않습니다.");
+  let capitalGains: CapitalGainsResult | null = null;
+  if (cg && fxArr && books) {
+    const fxEnd = fxArr[n - 1];
+    const lastYear = cal[n - 1].slice(0, 4);
+    let unpaidKrw = 0;
+    for (const y of [...yearGain.keys()].sort()) {
+      if (settled.has(y)) continue;
+      const net = yearGain.get(y) ?? 0;
+      const t = capitalGainsTax(net).taxKrw;
+      if (y !== lastYear) unpaidKrw += t;
+      taxYears.push({ year: y, netGainKrw: net, taxKrw: t, paidOn: null, paidUsd: 0 });
+    }
+    const realizedLast = yearGain.get(lastYear) ?? 0;
+    const lastTax = capitalGainsTax(realizedLast).taxKrw;
+    unpaidKrw += lastTax;
+    const unrealized = books.reduce((a, b, s) => a + shares[s] * px[s][n - 1] * fxEnd - b.position.krw, 0);
+    const liquidationExtraKrw = capitalGainsTax(realizedLast + unrealized).taxKrw - lastTax;
+    capitalGains = {
+      method: cg.method,
+      fxBasis: cg.fixedFx && cg.fixedFx > 0 ? "fixed" : "historical",
+      years: taxYears.sort((a, b) => a.year.localeCompare(b.year)),
+      paidUsd: taxPaidUsd,
+      unpaidKrw,
+      liquidationExtraKrw,
+      afterTaxLiquidationUsd: finalValue - (unpaidKrw + liquidationExtraKrw) / fxEnd,
+      fxEnd,
+    };
+    notes.push(`양도소득세: 연간 손익통산 후 250만 원 공제·22%, 다음 해 5월 첫 거래일에 납부(현금 → 부족하면 보유 비율대로 매도)한다고 가정했습니다. 이 포트폴리오 외 다른 해외주식 매매는 없다고 보며, 원화 환산은 ${capitalGains.fxBasis === "fixed" ? `고정 환율 ${cg.fixedFx}원` : "거래일 원/달러 종가(실제 신고는 결제일 기준환율)"}입니다.`);
+  }
   return {
     ok: true,
     config: cfg,
@@ -374,6 +489,7 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
     })),
     costs,
     contributions,
+    capitalGains,
     notes,
   };
 }

@@ -3,7 +3,7 @@ import type { MarketBriefing } from "@/lib/briefing/types";
 import { formatEt } from "@/lib/time";
 import BriefingIndexView, { pickSession, type BriefingIndexProps } from "@/components/BriefingIndexView";
 import { BriefingIndexStatic } from "@/components/BriefingStaticClient";
-import { Notice } from "@/components/ui";
+import { Notice, PageHeader } from "@/components/ui";
 import { dataHealth } from "@/lib/views";
 import { perRequest, readSearchParams } from "@/lib/page-mode";
 import { IS_STATIC } from "@/lib/static-mode";
@@ -22,19 +22,16 @@ export default async function BriefingIndex({ searchParams }: { searchParams: Pr
   const props: BriefingIndexProps = { dates, date, session, items, market: market?.content ?? null };
 
   return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-xl font-bold">일일 투자 브리핑</h1>
-        <p className="text-sm text-muted">
-          수집된 주가·거래량·뉴스·일정 데이터로 종목마다 따로 생성한 브리핑입니다. 장중 브리핑과 장 마감 후 브리핑(정규장 데이터 확정 후)은 구분됩니다.
-        </p>
+    <div className="flex flex-col">
+      <PageHeader title="일일 브리핑" description="수집한 주가·거래량·뉴스·일정으로 종목마다 만든 요약입니다. 장중과 장 마감 후(정규장 데이터 확정 후)를 구분합니다." />
+      <div className="flex flex-col gap-5">
+        {health.briefingFail && (
+          <Notice tone="warn" title="최근 브리핑 생성 작업 실패">
+            {health.briefingFail.message} · 마지막 정상 생성: {health.briefingOk ? formatEt(health.briefingOk) : "기록 없음"}
+          </Notice>
+        )}
+        {IS_STATIC ? <BriefingIndexStatic initial={props} /> : <BriefingIndexView {...props} />}
       </div>
-      {health.briefingFail && (
-        <Notice tone="warn" title="최근 브리핑 생성 작업 실패">
-          {health.briefingFail.message} · 마지막 정상 생성: {health.briefingOk ? formatEt(health.briefingOk) : "기록 없음"}
-        </Notice>
-      )}
-      {IS_STATIC ? <BriefingIndexStatic initial={props} /> : <BriefingIndexView {...props} />}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { briefingHistory, latestBriefing, readBriefing } from "@/lib/briefing/st
 import type { SessionType, SymbolBriefing, MarketBriefing } from "@/lib/briefing/types";
 import { getInstrument, normalizeSymbol } from "@/lib/instruments";
 import BriefingView, { MarketBriefingView } from "@/components/BriefingView";
-import { Empty, Section } from "@/components/ui";
+import { Empty, Fold, Section } from "@/components/ui";
 import { BriefingRecordStatic } from "@/components/BriefingStaticClient";
 import { INSTRUMENTS } from "@/config/instruments";
 import { perRequest, readSearchParams } from "@/lib/page-mode";
@@ -53,7 +53,7 @@ export default async function SymbolBriefingPage({ params, searchParams }: Props
         )}
       </Section>
       {history.length > 0 && (
-        <Section title="브리핑 기록">
+        <Fold summary={`지난 브리핑 ${history.length}건`}>
           <ul className="grid gap-1 text-sm sm:grid-cols-2 lg:grid-cols-3">
             {history.map((h) => (
               <li key={h.id}>
@@ -65,7 +65,7 @@ export default async function SymbolBriefingPage({ params, searchParams }: Props
               </li>
             ))}
           </ul>
-        </Section>
+        </Fold>
       )}
     </div>
   );

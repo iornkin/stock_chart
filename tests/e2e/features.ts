@@ -39,8 +39,8 @@ export async function featureChecks(browser: Browser, base: string, out: string,
 
   // ── 대시보드: 입력 전에는 개인 금액을 표시하지 않음 ──
   await go("/");
-  let t = await waitText(page, "내 투자 현황");
-  check(`${P}대시보드: 자산 입력 전 개인 금액 표시 안 함`, t.includes("아직 입력한 자산이 없어 총자산·손익·분배금을 표시하지 않습니다"));
+  let t = await waitText(page, "입력 전에는 금액을 표시하지 않습니다");
+  check(`${P}대시보드: 자산 입력 전 개인 금액 표시 안 함`, t.includes("입력 전에는 금액을 표시하지 않습니다") && t.includes("내 자산 입력"));
 
   // ── 내 자산: 간편 입력 ──
   await go("/portfolio");
@@ -65,12 +65,19 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   t = await waitText(page, money(total));
   check(`${P}내 자산(간편): 총자산 = 수량 × 현재가 + 현금`, t.includes(money(total)), `기대 ${money(total)}`);
   check(`${P}내 자산(간편): 매수 원가 합계`, t.includes(money(9500)));
+  const tabs = page.getByRole("tablist", { name: "내 자산 화면" });
+  await tabs.getByRole("tab", { name: "분배금" }).click();
+  t = await waitText(page, "예상 연간 분배금 (추정)");
   check(`${P}내 자산(간편): 예상 연간 분배금은 추정으로 구분`, t.includes("예상 연간 분배금 (추정)") && t.includes("확정 아님"));
   await page.reload({ waitUntil: "networkidle" });
   t = await waitText(page, money(total));
-  check(`${P}내 자산: 새로고침 후 데이터 유지 (IndexedDB)`, t.includes("QQQ") && t.includes("JEPI") && t.includes(money(total)));
+  check(`${P}내 자산: 새로고침 후 데이터 유지 (IndexedDB)·요약과 보유 종목 탭`, t.includes("QQQ") && t.includes("JEPI") && t.includes(money(total)) && t.includes("비중"));
+  await tabs.getByRole("tab", { name: "세금" }).click();
+  t = await waitText(page, "해외주식 양도소득세");
+  check(`${P}내 자산: 세금 탭 (양도세·금융소득 기준)`, t.includes("해외주식 양도소득세") && t.includes("2,000만 원"));
 
   // ── 간편 입력 → 거래 내역 전환 (중복 계산 없음) ──
+  await tabs.getByRole("tab", { name: "보유 종목 입력" }).click();
   await page.getByRole("button", { name: "거래 내역 관리로 전환" }).click();
   t = await waitText(page, "기초 보유");
   check(`${P}전환: 기초 보유·입금 기록 생성`, t.includes("기초 보유") && t.includes("입금"));
@@ -95,6 +102,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await txn("분배금 수령", { "거래 티커": "JEPI", 금액: "50", 세금: "7.5" });
   await txn("분배금 재투자", { "거래 티커": "JEPI", 금액: "40", 세금: "6", 수량: "0.6", 가격: "55" });
   await txn("출금", { 금액: "200" });
+  await tabs.getByRole("tab", { name: "분배금" }).click();
   t = await waitText(page, money(90));
   check(`${P}거래 내역: 실제 분배금 누적 (수령+재투자)`, t.includes(money(90)));
   check(`${P}거래 내역: 외부 입출금은 원금으로 구분`, t.includes(`순납입 원금 ${money(10800)}`));
@@ -102,7 +110,11 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   const value = 7 * qqq + 100.6 * jepi;
   t = await waitText(page, money(value + cash));
   check(`${P}거래 내역: 총자산 = 평가금액 + 현금`, t.includes(money(value + cash)), `기대 ${money(value + cash)}`);
+  await tabs.getByRole("tab", { name: "세금" }).click();
+  t = await waitText(page, "년 실현 손익 (원화)");
+  check(`${P}거래 내역: 세금 탭 — 매도 차익 원화 환산·기본공제`, t.includes("년 실현 손익 (원화)") && t.includes("250만 원") && !t.includes("매도 없음"));
   await page.reload({ waitUntil: "networkidle" });
+  await tabs.getByRole("tab", { name: "거래 입력·내역" }).click();
   t = await waitText(page, "분배금 재투자");
   check(`${P}거래 내역: 새로고침 후 유지`, t.includes("분배금 재투자") && t.includes(money(value + cash)));
   await page.screenshot({ path: path.join(out, `${slug}-portfolio.png`), fullPage: true });
@@ -134,10 +146,16 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await waitText(page, "종목별 실제 데이터 범위");
   await page.getByRole("button", { name: "5년", exact: true }).click();
   await page.getByRole("button", { name: "백테스트 실행" }).click();
-  t = await waitText(page, "결과 비교");
+  t = await waitText(page, "4. 결과");
   check(`${P}백테스트: 두 포트폴리오·벤치마크 동일 조건 비교`, t.includes("최종 평가금액") && t.includes("연환산 수익률 (CAGR)") && t.includes("최대 낙폭") && t.includes("샤프 비율") && t.includes("벤치마크 대비 초과 총수익률"));
   check(`${P}백테스트: 분배금 재투자 효과·가격만 수익률 구분`, t.includes("재투자 효과") && t.includes("가격만의 수익률"));
-  check(`${P}백테스트: 차트·히트맵·연도별`, (await page.locator("canvas").count()) >= 2 && t.includes("월별 수익률 히트맵") && t.includes("연도별 수익률"));
+  const btTabs = page.getByRole("tablist", { name: "백테스트 결과" });
+  await btTabs.getByRole("tab", { name: "자산 추이·낙폭" }).click();
+  await page.waitForTimeout(500);
+  const btCanvas = await page.locator("canvas").count();
+  await btTabs.getByRole("tab", { name: "연도·월별" }).click();
+  t = await waitText(page, "월별 수익률 히트맵");
+  check(`${P}백테스트: 차트·히트맵·연도별 (탭)`, btCanvas >= 2 && t.includes("월별 수익률 히트맵") && (await page.getByRole("img", { name: "연도별 수익률 비교" }).count()) === 1, `canvas ${btCanvas}`);
   check(`${P}백테스트: 과거 성과 미보장 안내`, t.includes("과거 성과는 미래 수익을 보장하지 않습니다"));
   await page.getByRole("button", { name: "결과 저장 (대시보드에 표시)" }).click();
   await page.screenshot({ path: path.join(out, `${slug}-backtest.png`), fullPage: true });
@@ -157,6 +175,8 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await page.getByRole("button", { name: /공통 기간\(2022-05-04~\)으로 맞추기/ }).click();
   await page.getByRole("button", { name: "백테스트 실행" }).click();
   t = await waitText(page, "계산 기간 2022-05-04");
+  await page.getByRole("tablist", { name: "백테스트 결과" }).getByRole("tab", { name: "종목별" }).click();
+  t = await waitText(page, "각 종목의 전체 이용 가능 기간 성과");
   check(`${P}백테스트: 공통 기간으로 맞춰 계산 + 종목별 전체 기간 결과 따로`, t.includes("계산 기간 2022-05-04") && t.includes("각 종목의 전체 이용 가능 기간 성과"));
   // 비중 합계 확인과 자동 정규화
   await page.getByLabel("포트폴리오 B 비중 2").fill("40");
@@ -166,7 +186,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await page.getByLabel("비중 합계가 100%가 아니면 자동 정규화 (끄면 오류로 알림)").check();
   await page.getByRole("button", { name: "백테스트 실행" }).click();
   t = await waitText(page, "자동 정규화했습니다");
-  check(`${P}백테스트: 자동 정규화 선택 시 계산`, t.includes("100%로 자동 정규화했습니다") && t.includes("결과 비교"));
+  check(`${P}백테스트: 자동 정규화 선택 시 계산 (결과 위에 안내)`, t.includes("100%로 자동 정규화했습니다") && t.includes("4. 결과"));
 
   // ── 미래 시뮬레이터 ──
   await go("/simulate");
@@ -188,14 +208,14 @@ export async function featureChecks(browser: Browser, base: string, out: string,
 
   // ── 스트레스 테스트 ──
   await go("/stress");
-  t = await waitText(page, "분배금 변화 없음");
-  check(`${P}스트레스: 분배금 0·10·20·30% 감소 (내 자산 기준)`, t.includes("분배금 변화 없음") && t.includes("전체 10% 감소") && t.includes("전체 30% 감소") && t.includes("예측이 아닙니다"));
+  t = await waitText(page, "전체 30% 감소");
+  check(`${P}스트레스: 지금 대비 분배금 10·20·30% 감소 (내 자산 기준)`, t.includes("지금 (최근 12개월 실제)") && t.includes("전체 10% 감소") && t.includes("전체 30% 감소") && t.includes("예측이 아닙니다"));
   await page.getByLabel("JEPI 감소율").fill("50");
   t = await waitText(page, "특정 종목만 감소");
-  check(`${P}스트레스: 특정 종목만 감소 시나리오 구분`, t.includes("특정 종목만 감소 (JEPI 50%)") && t.includes("재투자 가능 금액"));
+  check(`${P}스트레스: 특정 종목만 감소 시나리오 구분`, t.includes("특정 종목만 감소 (JEPI 50%)") && t.includes("연간 세후"));
   await page.getByRole("tab", { name: "하락장" }).click();
   t = await waitText(page, "과거 실제 하락 구간", 20000);
-  check(`${P}스트레스: 하락장 단순 충격·일일 복리 경로·과거 구간`, t.includes("단순 충격 분석") && t.includes("일일 복리 경로") && t.includes("베타") && t.includes("과거 실제 하락 구간"));
+  check(`${P}스트레스: 하락장 경로 계산·종목별 베타·과거 구간`, t.includes("지수가 하락하면") && t.includes("예상 손익률") && t.includes("베타") && t.includes("과거 실제 하락 구간"));
   await page.screenshot({ path: path.join(out, `${slug}-stress.png`), fullPage: true });
 
   // ── 전략 ──
@@ -221,8 +241,8 @@ export async function featureChecks(browser: Browser, base: string, out: string,
 
   // ── 대시보드: 개인 영역 ──
   await go("/");
-  t = await waitText(page, "최근 백테스트·시뮬레이션 결과");
-  check(`${P}대시보드: 내 총자산·분배금·전략·최근 결과`, t.includes(money(value + cash)) && t.includes("최근 12개월 실제 분배금") && t.includes("SCHD 50% + DIVO 50%") && t.includes("백테스트 "));
+  t = await waitText(page, "저장한 전략 6개");
+  check(`${P}대시보드: 내 총자산·분배금·전략·최근 결과 수`, t.includes(money(value + cash)) && t.includes("최근 12개월 실제 분배금") && t.includes("저장한 전략 6개") && /최근 계산 결과 [1-9]\d*개/.test(t) && t.includes("가상 계좌 거래 1건"));
 
   // ── 원화 환산 ──
   await go("/settings");
@@ -278,7 +298,9 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await page.getByRole("button", { name: "현재 데이터를 지우고 복원" }).click();
   await page.waitForTimeout(2000);
   await go("/portfolio");
-  t = await waitText(page, money(value + cash));
+  await waitText(page, money(value + cash));
+  await tabs.getByRole("tab", { name: "거래 입력·내역" }).click();
+  t = await waitText(page, "분배금 재투자");
   check(`${P}복원: 암호화 백업에서 자산·거래 내역 복원`, t.includes(money(value + cash)) && t.includes("분배금 재투자"));
   await go("/strategies");
   t = await waitText(page, "(복사본)");

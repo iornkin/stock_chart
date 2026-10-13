@@ -176,10 +176,13 @@ async function main() {
     await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
     let t = await textOf(page);
     check("대시보드: 시장 지수", t.includes("S&P 500") && t.includes("NASDAQ 100") && t.includes("Dow Jones"));
-    check("대시보드: 핵심 종목 카드", (await page.locator('a[href="/stock/JEPI"]').count()) > 0 && t.includes("거래량"));
-    check("대시보드: 상승/하락/거래량 순위", t.includes("상승률 상위") && t.includes("하락률 상위") && t.includes("거래량 변화 상위"));
-    check("대시보드: 오늘 확인할 것·새 변화 종목", t.includes("오늘 확인할 것") && t.includes("오늘 새 변화가 있는 종목"));
-    check("대시보드: 레버리지 위험 지표·데이터 갱신 시각", t.includes("레버리지 ETF 위험 지표") && t.includes("장 마감 데이터") && t.includes("TQQQ"));
+    check("대시보드: 핵심 종목 목록", (await page.locator('a[href="/stock/JEPI"]').count()) > 0 && t.includes("핵심 종목"));
+    check("대시보드: 오늘 확인할 것·레버리지 위험 한 줄·갱신 시각", t.includes("오늘 확인할 것") && t.includes("최고점 대비") && /시세 .+ · 브리핑 .+ 갱신/.test(t));
+    const moverTabs = page.getByRole("tablist", { name: "시장 움직임" });
+    check("대시보드: 시장 움직임 탭 (새 변화·상승·하락·거래량)", (await moverTabs.getByRole("tab").allInnerTexts()).map((x) => x.replace(/\d+$/, "").trim()).join(",") === "새 변화,상승,하락,거래량");
+    await moverTabs.getByRole("tab", { name: "거래량" }).click();
+    check("대시보드: 거래량 탭 — 평균 대비 배수", (await textOf(page)).includes("평균의"));
+    await moverTabs.getByRole("tab", { name: "하락" }).click();
     const downCard = await page.evaluate(() => {
       // 하락 종목 카드의 선 그래프는 하락 색(--down)
       const cards = [...document.querySelectorAll('a[href^="/stock/"]')].filter((a) => a.querySelector("svg polyline") && a.textContent?.includes("−"));
@@ -187,7 +190,10 @@ async function main() {
       return line?.getAttribute("stroke") ?? null;
     });
     check("대시보드: 하락 종목 그래프는 하락 색", downCard === null || downCard === "var(--down)", String(downCard));
-    check("대시보드: 실적·배당 일정", t.includes("실적 발표 일정") && t.includes("다가오는 배당락"));
+    const sched = page.getByRole("tablist", { name: "다가오는 일정" });
+    await sched.getByRole("tab", { name: /실적/ }).click();
+    t = await textOf(page);
+    check("대시보드: 일정 탭 (배당락·지급·실적·경제지표)", t.includes("다가오는 일정") && (await sched.getByRole("tab").count()) === 3 && !t.includes("undefined"));
     await page.screenshot({ path: path.join(OUT, "desktop-dashboard.png"), fullPage: true });
 
     for (const s of ["QQQ", "TQQQ", "QLD", "VOO", "SPY", "DGRO", "JEPI", "JEPQ", "DIVO", "GLD", "NVDA"]) {
@@ -259,7 +265,7 @@ async function main() {
     await page.goto(`${BASE}/leverage`, { waitUntil: "networkidle" });
     await page.waitForSelector("canvas", { timeout: 15000 }).catch(() => null);
     t = await textOf(page);
-    check("레버리지 분석: 하루 목표 설명·기간별 수익률·급락 구간·1년 분포", t.includes("하루 목표와 장기 성과는 다릅니다") && t.includes("기간별 수익률") && t.includes("급락 구간의 손실과 회복") && t.includes("1년 보유했을 때") && t.includes("배수 대비"));
+    check("레버리지 분석: 하루 목표 설명·기간별 수익률·급락 구간·1년 분포", t.includes("왜 기간 수익률 × 배수가 아닌가요") && t.includes("기간별 수익률") && t.includes("급락 구간의 손실과 회복") && t.includes("1년 보유했을 때") && t.includes("배수 대비"));
     check("레버리지 분석: QQQ·QLD·TQQQ 같은 기간 비교 차트", t.includes("QQQ") && t.includes("QLD") && t.includes("TQQQ") && (await page.locator("canvas").count()) > 0);
     await page.getByRole("tab", { name: /S&P 500/ }).click();
     check("레버리지 분석: S&P 500 묶음", (await textOf(page)).includes("UPRO"));
@@ -272,6 +278,9 @@ async function main() {
     t = await textOf(page);
     check("배당 계산기: 수량 입력 반영·가정치 구분", t.includes("최근 12개월 실제 지급 기준") && t.includes("가정"));
     await page.goto(`${BASE}/income`, { waitUntil: "networkidle" });
+    t = await textOf(page);
+    check("배당 허브: 하위 탭·종목별 요약 표", t.includes("목표 배당 계산기") && t.includes("배당 캘린더") && t.includes("최근 12개월 실제 지급") && t.includes("JEPI"));
+    await page.getByRole("tab", { name: "보유 종목 현금흐름" }).click();
     await page.getByLabel("보유 종목 선택").selectOption("SCHD");
     await page.getByRole("button", { name: "추가" }).click();
     await page.getByLabel("보유 종목 선택").selectOption("JEPI");
@@ -294,7 +303,9 @@ async function main() {
     // 브리핑·캘린더·관심·설정·상태
     await page.goto(`${BASE}/briefing`, { waitUntil: "networkidle" });
     t = await textOf(page);
-    check("브리핑 페이지: 시장 브리핑·종목 목록", t.includes("오늘의 미국 시장 브리핑") && t.includes("QQQ") && t.includes("다음 거래일"));
+    check("브리핑 페이지: 시장 브리핑 요약·종목별 목록", t.includes("시장 브리핑") && t.includes("종목별 브리핑") && t.includes("AAPL") && t.includes("전체 보기"));
+    await page.getByRole("tablist", { name: "종목 분류" }).getByRole("tab", { name: "레버리지" }).click();
+    check("브리핑 페이지: 분류 탭 전환", (await textOf(page)).includes("TQQQ"));
     await page.screenshot({ path: path.join(OUT, "desktop-briefing.png"), fullPage: true });
     await page.goto(`${BASE}/calendar`, { waitUntil: "networkidle" });
     t = await textOf(page);
@@ -343,8 +354,34 @@ async function main() {
       await m.screenshot({ path: path.join(OUT, `mobile-${name}.png`), fullPage: true });
     }
     await m.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    check("모바일 하단 탭", (await m.getByRole("navigation", { name: "하단 메뉴" }).innerText()).replace(/\s+/g, " ").trim() === "홈 브리핑 종목 내 자산 메뉴");
     await m.getByRole("button", { name: "메뉴 열기" }).click();
-    check("모바일 메뉴", await m.getByRole("link", { name: "배당·분배금 캘린더" }).isVisible());
+    check("모바일 전체 메뉴", (await m.getByRole("dialog", { name: "전체 메뉴" }).getByRole("link", { name: "배당·분배금" }).isVisible()) && (await m.getByRole("dialog", { name: "전체 메뉴" }).getByRole("link", { name: "미래 시뮬레이터" }).isVisible()));
+    await m.getByRole("dialog", { name: "전체 메뉴" }).getByRole("link", { name: "배당·분배금" }).click();
+    await m.waitForURL(/\/income$/);
+    await m.getByRole("navigation", { name: "배당·분배금 하위 메뉴" }).getByRole("link", { name: "배당 캘린더" }).click();
+    await m.waitForURL(/\/calendar$/);
+    check("모바일: 메뉴 → 하위 탭으로 배당 캘린더 이동", (await textOf(m)).includes("배당 캘린더"));
+
+    // 홈 화면 설치(PWA): 매니페스트·아이콘·서비스 워커, 오프라인일 때 안내 페이지 (데이터는 저장하지 않음)
+    const manifest = await (await fetch(`${BASE}/manifest.webmanifest`)).json();
+    const iconOk = (await Promise.all((manifest.icons as { src: string }[]).map(async (i) => (await fetch(new URL(i.src, `${BASE}/manifest.webmanifest`))).status === 200))).every(Boolean);
+    check("PWA: 매니페스트·아이콘", manifest.display === "standalone" && manifest.start_url === "./" && manifest.icons.length >= 3 && iconOk);
+    check("PWA: 매니페스트·애플 아이콘 링크", (await m.locator('link[rel="manifest"]').getAttribute("href")) === "/manifest.webmanifest" && (await m.locator('link[rel="apple-touch-icon"]').count()) === 1);
+    const swReady = await m.evaluate(() => Promise.race([navigator.serviceWorker.ready.then((r) => r.scope), new Promise((res) => setTimeout(() => res(null), 8000))]));
+    check("PWA: 서비스 워커 등록", swReady === `${BASE}/`, String(swReady));
+    // Playwright 의 오프라인 흉내는 이 설정이 있어야 서비스 워커의 요청에도 적용된다 (새 컨텍스트에서만 확인)
+    process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS = "1";
+    const octx = await browser.newContext({ locale: "ko-KR" });
+    const op = await octx.newPage();
+    await op.goto(`${BASE}/`, { waitUntil: "networkidle" });
+    await op.evaluate(() => navigator.serviceWorker.ready.then(() => true));
+    await octx.setOffline(true);
+    await op.goto(`${BASE}/stocks`).catch(() => null);
+    const offlineText = await textOf(op).catch(() => "");
+    await octx.close();
+    delete process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS;
+    check("PWA: 오프라인이면 '연결 안 됨' 안내 (오래된 시세를 보여 주지 않음)", offlineText.includes("인터넷에 연결되어 있지 않습니다") && !offlineText.includes("$"));
 
     // 개인 자산·가상 투자·백테스트·시뮬레이터·스트레스 테스트·전략·백업
     await featureChecks(browser, BASE, OUT, check, async (s) => {
