@@ -210,6 +210,39 @@ API 키는 서버 환경변수로만 읽습니다(`src/lib/env.ts`). 클라이�
 
 ## 7. 배포
 
+### 7-1. GitHub Pages로 무료 운영 (PC를 켜 두지 않아도 됨)
+
+GitHub Actions가 정해진 시각에 데이터를 수집하고 브리핑을 만든 뒤, 정적 사이트로 빌드해 GitHub Pages에 올립니다.
+공개 저장소에서는 Actions와 Pages가 무료입니다(2026년 기준, 요금 정책은 GitHub 공지를 확인하세요).
+
+**처음 한 번 설정**
+1. 저장소를 공개로 바꿉니다: Settings → General → Danger Zone → Change visibility → Public
+2. 이 워크플로가 있는 브랜치를 기본 브랜치(main)에 병합합니다. 예약 실행은 기본 브랜치에서만 동작합니다.
+3. Settings → Pages → Build and deployment → Source를 **GitHub Actions**로 바꿉니다.
+4. Settings → Secrets and variables → Actions → New repository secret에서 키를 넣습니다.
+   - `SEC_USER_AGENT` (예: `MyStockSite 본인이메일@example.com`), `FINNHUB_API_KEY`, `FRED_API_KEY`
+   - 선택: `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `ANTHROPIC_API_KEY`(유료)
+5. Actions 탭 → **정적 사이트 갱신** → Run workflow → mode에서 `all`을 골라 실행합니다(처음 전체 수집, 10~20분).
+6. 끝나면 `https://<GitHub 사용자명>.github.io/<저장소 이름>/` 에서 열립니다.
+
+**동작 방식**
+- 예약 실행 시각(한국 시간): 평일 22:45·00:45·02:45·04:45(미국 장중), 07:20(장 마감 후 브리핑), 주말 00:30. 시각은 `.github/workflows/pages.yml`의 `cron`(UTC)에서 바꿉니다.
+- 실행할 때마다 `npm run job -- due`로 그 시각에 해야 할 작업(시세·뉴스·장 마감 데이터·브리핑)을 처리합니다.
+- 수집한 DB는 압축해서 `data` 브랜치에 저장하고 다음 실행 때 불러옵니다. 이 브랜치는 매번 덮어씁니다.
+- 화면 위에 "정적 스냅샷" 안내와 페이지 생성 시각이 표시됩니다. 실시간 시세가 아니며 시세에는 "수집 시점 스냅샷"이라고 표시됩니다.
+- API 키는 GitHub Secrets에만 있고 사이트 파일에는 들어가지 않습니다.
+
+**제약**
+- GitHub 사정으로 예약 실행이 수십 분 늦어지거나 건너뛰어질 수 있습니다.
+- 공개 저장소에 60일 동안 활동이 없으면 GitHub이 예약 실행을 멈춥니다. 워크플로가 매번 다시 활성화를 시도하지만 효과는 보장되지 않습니다. 멈추면 Actions 탭에서 다시 켜면 됩니다.
+- Yahoo·Nasdaq 같은 비공식 제공처가 GitHub 서버의 접속을 막을 수 있습니다. 사이트의 데이터 상태 화면이나 Actions 실행 기록에서 확인하세요.
+- 1분봉, 설정 화면의 일정 변경·수동 실행, 브리핑 기록(최근 30건 초과)은 정적 사이트에서 제공하지 않습니다.
+- 사이트 주소를 아는 사람은 누구나 볼 수 있습니다.
+
+로컬에서 정적 사이트를 미리 확인하려면 `BASE_PATH=/stock_chart npm run build:static` 후 `npm run test:e2e:static`을 실행합니다.
+
+### 7-2. 서버에 배포
+
 이 사이트는 **SQLite 파일과 상시 실행 워커**를 쓰므로, 디스크가 유지되는 단일 서버(VM·VPS·컨테이너)에 배포하는 것을 권장합니다.
 
 **Docker**
@@ -263,10 +296,14 @@ src/
     market-calendar.ts           NYSE 휴장일·조기 폐장·시장 상태
     http.ts                      호출 간격 제한·재시도·서킷 브레이커·호출 로그
     db.ts                        SQLite 스키마·헬퍼
+    compare-core.ts              종목 비교 계산 (서버·정적 사이트 브라우저 공용)
+    static-mode.ts, page-mode.ts 정적 사이트(GitHub Pages) 빌드 여부·경로, 페이지 렌더링 방식
+    client/data-api.ts           화면 데이터 조회 (서버 모드 /api/*, 정적 모드 data/*.json)
   app/                           페이지와 API (Next.js App Router)
   components/                    차트, 브리핑, 배당, 재무, ETF, 비교 UI
-scripts/                         worker, run-job, start-all
-tests/                           단위 테스트, e2e(합성 데이터 모의 서버 + Playwright)
+scripts/                         worker, run-job(due 포함), start-all, export-static(정적 사이트 데이터)
+.github/workflows/pages.yml      GitHub Actions 예약 수집 → 정적 사이트 빌드 → GitHub Pages 배포
+tests/                           단위 테스트, e2e(합성 데이터 모의 서버 + Playwright), 정적 사이트 e2e
 ```
 
 기술 스택: Next.js 16(App Router), React 19, TypeScript, Tailwind CSS 4, Node.js 내장 SQLite, Lightweight Charts 5, Vitest, Playwright.

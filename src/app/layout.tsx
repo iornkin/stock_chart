@@ -7,6 +7,8 @@ import MarketClock from "@/components/MarketClock";
 import MobileNav from "@/components/MobileNav";
 import PrefsApplier from "@/components/PrefsApplier";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme-script";
+import SnapshotBanner from "@/components/SnapshotBanner";
+import { IS_STATIC } from "@/lib/static-mode";
 
 export const metadata: Metadata = {
   title: { default: "US Stock Insight — 미국 주식·ETF 분석", template: "%s · US Stock Insight" },
@@ -54,6 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <MarketClock />
               </div>
             </header>
+            {IS_STATIC && <SnapshotBanner builtAt={Date.now()} />}
             <main className="mx-auto w-full max-w-[1500px] flex-1 px-4 py-5 lg:px-6">{children}</main>
           </div>
         </div>

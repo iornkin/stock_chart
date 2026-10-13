@@ -53,6 +53,8 @@ export const env = {
   get adminToken() { return str("ADMIN_TOKEN"); },
   get httpTimeoutMs() { return num("HTTP_TIMEOUT_MS", 15000); },
   get onDemandFetch() { return bool("ON_DEMAND_FETCH", true); },
+  /** 정적 사이트용: 화면 조회 때 받아오던 봉 간격(1시간·주·월봉)과 장중 5분봉을 수집 작업에서 미리 받아 둔다 */
+  get collectAllIntervals() { return bool("COLLECT_ALL_INTERVALS", false); },
   get logLevel() { return str("LOG_LEVEL", "info"); },
 };
 

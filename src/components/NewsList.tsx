@@ -1,5 +1,6 @@
 import type { NewsItem } from "@/lib/types";
-import { formatEt, relativeTime } from "@/lib/time";
+import { formatEt } from "@/lib/time";
+import RelTime from "./RelTime";
 import { Empty } from "./ui";
 
 /** 뉴스 목록 — 제목, 요약, 게시 시각(ET), 출처, 원문 링크, 연관 이유 */
@@ -21,7 +22,7 @@ export default function NewsList({ items, empty = "뉴스가 없습니다.", sho
           )}
           <div className="mt-1 flex flex-wrap gap-x-2 text-[11px] text-muted">
             <span>{n.publisher ?? n.provider}</span>
-            <span className="num" title={formatEt(n.publishedAt)}>게시 {formatEt(n.publishedAt)} ({relativeTime(n.publishedAt)})</span>
+            <span className="num" title={formatEt(n.publishedAt)}>게시 {formatEt(n.publishedAt)} <RelTime ms={n.publishedAt} paren /></span>
             <span>via {n.provider}</span>
             {showReason && n.reason && <span>· 관련 이유: {n.reason}</span>}
             {n.duplicates && n.duplicates.length > 0 && (

@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useWatchlist } from "@/lib/client/prefs";
+import { fetchQuotes } from "@/lib/client/data-api";
 import { fmtPrice } from "@/lib/format";
 import { getInstrument } from "@/lib/instruments";
 import { PctBadge, Empty } from "./ui";
@@ -22,9 +23,8 @@ export function useQuotes(symbols: string[]) {
     if (!key) return;
     let alive = true;
     setLoading(true);
-    fetch(`/api/quotes?symbols=${encodeURIComponent(key)}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((j: { quotes: Q[] }) => {
+    fetchQuotes<Q>(key.split(","))
+      .then((j) => {
         if (!alive) return;
         setData(Object.fromEntries(j.quotes.map((q) => [q.symbol, q])));
         setError(null);

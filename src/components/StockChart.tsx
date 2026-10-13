@@ -30,6 +30,8 @@ import { bollinger, ema, macd, rollingVwap, rsi, sessionVwap, sma, type Series }
 import { etDate, etOffsetMinutes, formatEt } from "@/lib/time";
 import { fmtCompact, fmtPct, fmtPrice } from "@/lib/format";
 import { usePrefs, type ChartPrefs } from "@/lib/client/prefs";
+import { chartUrl, getJson } from "@/lib/client/data-api";
+import { IS_STATIC } from "@/lib/static-mode";
 
 type Interval = "1m" | "5m" | "15m" | "30m" | "60m" | "1d" | "1wk" | "1mo";
 type RangeKey = "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y" | "MAX";
@@ -131,10 +133,9 @@ export default function StockChart({ symbol, initialRange = "1Y" }: { symbol: st
     let alive = true;
     setLoading(true);
     setError(null);
-    fetch(`/api/chart/${encodeURIComponent(symbol)}?interval=${interval}`)
-      .then(async (r) => {
-        const j = (await r.json()) as ChartResponse;
-        if (!r.ok || !j.bars?.length) throw new Error(j.error ?? `HTTP ${r.status}`);
+    getJson<ChartResponse>(chartUrl(symbol, interval))
+      .then((j) => {
+        if (!j.bars?.length) throw new Error(j.error ?? "가격 데이터가 없습니다");
         return j;
       })
       .then((j) => alive && setData(j))
@@ -377,7 +378,7 @@ export default function StockChart({ symbol, initialRange = "1Y" }: { symbol: st
             onChange={(e) => setIntervalState(e.target.value as Interval)}
             className="rounded-md border border-line bg-surface px-2 py-1 text-xs"
           >
-            {RANGES[range].intervals.map((i) => (
+            {RANGES[range].intervals.filter((i) => !(IS_STATIC && i === "1m")).map((i) => (
               <option key={i} value={i}>
                 {INTERVAL_LABEL[i]}
               </option>

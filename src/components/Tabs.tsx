@@ -9,6 +9,8 @@ export default function Tabs({ tabs, panels, initial }: { tabs: { key: string; l
       const t = new URLSearchParams(window.location.search).get("tab");
       if (t && tabs.some((x) => x.key === t)) setActive(t);
     };
+    // 정적 사이트에서는 서버가 ?tab= 을 읽지 못하므로 처음 표시할 때 브라우저에서 확인한다
+    onPop();
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [tabs]);

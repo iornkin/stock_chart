@@ -8,7 +8,7 @@ import { readAllDividends } from "@/lib/data/dividends";
 import { latestBriefing, latestBriefingList } from "@/lib/briefing/store";
 import type { MarketBriefing } from "@/lib/briefing/types";
 import { marketStatus } from "@/lib/market-calendar";
-import { addDays, formatEt, relativeTime } from "@/lib/time";
+import { addDays, formatEt } from "@/lib/time";
 import { fmtCompact, fmtDividend, fmtPrice } from "@/lib/format";
 import { dataHealth, sparkCloses } from "@/lib/views";
 import QuoteCard from "@/components/QuoteCard";
@@ -16,8 +16,9 @@ import { Change, Empty, Notice, PctBadge, Section } from "@/components/ui";
 import WatchlistPanel from "@/components/WatchlistPanel";
 import AutoRefresh from "@/components/AutoRefresh";
 import NewsList from "@/components/NewsList";
-
-export const dynamic = "force-dynamic";
+import RelTime from "@/components/RelTime";
+import MarketPhaseText from "@/components/MarketPhaseText";
+import { perRequest } from "@/lib/page-mode";
 
 function MarketIndexCard({ symbol, name, q, note }: { symbol: string; name: string; q?: QuoteView; note?: string }) {
   if (!q || q.price === null) return null;
@@ -32,7 +33,9 @@ function MarketIndexCard({ symbol, name, q, note }: { symbol: string; name: stri
 }
 
 export default async function Dashboard() {
-  const st = marketStatus();
+  await perRequest();
+  const renderedAt = Date.now();
+  const st = marketStatus(renderedAt);
   const universe = allSymbols();
   const marketSyms = MARKET_SYMBOLS.map((m) => m.symbol);
   const quotes = await getQuotes([...universe, ...marketSyms], "list");
@@ -67,8 +70,14 @@ export default async function Dashboard() {
         <div>
           <h1 className="text-xl font-bold">오늘의 미국 시장</h1>
           <p className="text-sm text-muted">
-            {st.etDate} (ET) · {st.label}
-            {st.earlyClose ? " · 13:00 ET 조기 폐장" : ""} · 시세 최종 갱신 {lastQuote ? `${formatEt(lastQuote)} (${relativeTime(lastQuote)})` : "없음"}
+            <MarketPhaseText at={renderedAt} variant="line" /> · 시세 최종 갱신{" "}
+            {lastQuote ? (
+              <>
+                {formatEt(lastQuote)} <RelTime ms={lastQuote} paren />
+              </>
+            ) : (
+              "없음"
+            )}
           </p>
         </div>
         <Link href="/status" className="text-xs text-muted hover:text-accent">데이터 수집 상태 →</Link>

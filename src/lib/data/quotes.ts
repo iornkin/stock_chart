@@ -4,6 +4,7 @@
  * 2순위: Yahoo v8 chart 메타데이터 (종목별, crumb 불필요)
  * 3순위: Finnhub /quote (개별 주식, 거래량 미제공)
  */
+import { IS_STATIC } from "../static-mode";
 import { all, run, tx } from "../db";
 import { env } from "../env";
 import { marketStatus } from "../market-calendar";
@@ -296,6 +297,12 @@ export async function getQuotes(symbols: string[], purpose: "detail" | "list" = 
 
 /** 실시간/지연 여부 표시 문구 */
 export function delayLabel(q: Pick<Quote, "delayMinutes" | "source" | "sourceDetail">): { realtime: boolean; text: string } {
+  // 정적 사이트의 시세는 수집 시점에 고정된 값이므로 실시간으로 표시하지 않는다
+  if (IS_STATIC) return { realtime: false, text: `수집 시점 스냅샷 (원 데이터: ${providerDelayLabel(q).text})` };
+  return providerDelayLabel(q);
+}
+
+function providerDelayLabel(q: Pick<Quote, "delayMinutes" | "source" | "sourceDetail">): { realtime: boolean; text: string } {
   if (q.delayMinutes === 0) {
     return { realtime: true, text: `제공처 기준 실시간${q.sourceDetail ? ` (${q.sourceDetail})` : ""}` };
   }

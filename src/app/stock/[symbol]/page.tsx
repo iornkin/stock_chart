@@ -2,12 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getInstrument, normalizeSymbol, CATEGORY_LABELS } from "@/lib/instruments";
+import { INSTRUMENTS } from "@/config/instruments";
 import { getQuotes, delayLabel } from "@/lib/data/quotes";
 import { readNews } from "@/lib/data/news";
 import { latestBriefing, briefingHistory } from "@/lib/briefing/store";
 import type { SymbolBriefing } from "@/lib/briefing/types";
 import { marketStatus } from "@/lib/market-calendar";
-import { formatEt, relativeTime } from "@/lib/time";
+import { formatEt } from "@/lib/time";
 import { fmtCompact, fmtPct, fmtPrice, fmtUsd, fmtUsdCompact } from "@/lib/format";
 import StockChart from "@/components/StockChart";
 import Tabs from "@/components/Tabs";
@@ -24,8 +25,15 @@ import { readDividends } from "@/lib/data/dividends";
 import { summarizeDividends } from "@/lib/dividend-analytics";
 import { etfProfile, stockFundamentals } from "@/lib/data/profile";
 import { lastFailure, lastSuccessAt } from "@/lib/jobs/runner";
+import { perRequest, readSearchParams } from "@/lib/page-mode";
+import { IS_STATIC } from "@/lib/static-mode";
+import RelTime from "@/components/RelTime";
+import MarketPhaseText from "@/components/MarketPhaseText";
 
-export const dynamic = "force-dynamic";
+/** 정적 사이트: 지원 종목(과 이전 티커) 페이지를 모두 미리 만든다. 서버 모드에서는 내보내지 않는다(요청마다 렌더링). */
+export const generateStaticParams = IS_STATIC
+  ? async () => INSTRUMENTS.flatMap((i) => [i.symbol, ...(i.formerSymbols ?? [])]).map((symbol) => ({ symbol }))
+  : undefined;
 
 type Props = { params: Promise<{ symbol: string }>; searchParams: Promise<{ tab?: string }> };
 
@@ -36,8 +44,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function StockPage({ params, searchParams }: Props) {
+  await perRequest();
   const { symbol: raw } = await params;
-  const { tab } = await searchParams;
+  const { tab } = await readSearchParams(searchParams);
   const symbol = normalizeSymbol(raw);
   const inst = getInstrument(symbol);
   if (!inst) notFound();
@@ -45,7 +54,8 @@ export default async function StockPage({ params, searchParams }: Props) {
 
   const quotes = await getQuotes([symbol], "detail");
   const q = quotes.get(symbol);
-  const st = marketStatus();
+  const renderedAt = Date.now();
+  const st = marketStatus(renderedAt);
   const brief = latestBriefing<SymbolBriefing>(symbol);
   const history = briefingHistory(symbol, 15);
   const news = readNews(symbol, Date.now() - 14 * 86400_000, Date.now(), 40);
@@ -193,7 +203,7 @@ export default async function StockPage({ params, searchParams }: Props) {
           </div>
           <div>
             <dt className="inline text-muted">시장 </dt>
-            <dd className="inline">{st.label}{q?.marketState ? ` (제공처: ${q.marketState})` : ""}</dd>
+            <dd className="inline"><MarketPhaseText at={renderedAt} />{q?.marketState ? ` (제공처 기록: ${q.marketState})` : ""}</dd>
           </div>
           <div>
             <dt className="inline text-muted">마지막 거래 시각 </dt>
@@ -201,7 +211,7 @@ export default async function StockPage({ params, searchParams }: Props) {
           </div>
           <div>
             <dt className="inline text-muted">데이터 갱신 </dt>
-            <dd className="inline num">{q ? `${formatEt(q.fetchedAt)} (${relativeTime(q.fetchedAt)})` : "-"}</dd>
+            <dd className="inline num">{q ? <>{formatEt(q.fetchedAt)} <RelTime ms={q.fetchedAt} paren /></> : "-"}</dd>
           </div>
           <div>
             <dt className="inline text-muted">데이터 구분 </dt>

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { INSTRUMENTS, CATEGORY_LABELS, CATEGORY_ORDER } from "@/config/instruments";
 import { setPrefs, useWatchlist } from "@/lib/client/prefs";
+import { fetchLatestHeadlines, fetchQuotes } from "@/lib/client/data-api";
 import { fmtCompact, fmtPrice } from "@/lib/format";
 import { formatEt } from "@/lib/time";
 import { Empty, PctBadge } from "./ui";
@@ -37,23 +38,13 @@ export default function WatchlistClient() {
     if (!hydrated || !key) return;
     let alive = true;
     setLoading(true);
-    fetch(`/api/quotes?symbols=${key}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((j: { quotes: Q[] }) => alive && setQuotes(Object.fromEntries(j.quotes.map((q) => [q.symbol, q]))))
+    fetchQuotes<Q>(key.split(","))
+      .then((j) => alive && setQuotes(Object.fromEntries(j.quotes.map((q) => [q.symbol, q]))))
       .catch((e) => alive && setError(String(e.message ?? e)))
       .finally(() => alive && setLoading(false));
-    Promise.all(
-      key.split(",").map((s) =>
-        fetch(`/api/briefing/${s}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null),
-      ),
-    ).then((rs) => {
-      if (!alive) return;
-      const out: Record<string, B> = {};
-      for (const r of rs) if (r) out[r.scope] = r;
-      setBriefs(out);
-    });
+    fetchLatestHeadlines(key.split(","))
+      .then((out) => alive && setBriefs(out))
+      .catch(() => alive && setBriefs({}));
     return () => {
       alive = false;
     };

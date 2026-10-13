@@ -4,7 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ColorType, LineSeries, createChart, type IChartApi, type MouseEventParams, type Time } from "lightweight-charts";
 import { INSTRUMENTS, CATEGORY_LABELS, CATEGORY_ORDER } from "@/config/instruments";
 import { COMPARE_PERIODS } from "@/lib/performance";
-import type { CompareResult } from "@/lib/compare";
+import type { CompareResult } from "@/lib/compare-core";
+import { fetchCompare } from "@/lib/client/data-api";
+import { IS_STATIC } from "@/lib/static-mode";
+import { isSupported, normalizeSymbol } from "@/lib/instruments";
 import { fmtCompact, fmtDividend, fmtPct, fmtUsdCompact } from "@/lib/format";
 import { formatEt } from "@/lib/time";
 
@@ -27,6 +30,15 @@ function cssVar(name: string, fb: string) {
 
 export default function CompareClient({ initial, showPresets = true }: { initial: string[]; showPresets?: boolean }) {
   const [symbols, setSymbols] = useState<string[]>(initial.slice(0, 5));
+  // 정적 사이트에서는 서버가 쿼리 문자열을 읽지 못하므로 브라우저에서 ?symbols= 를 읽은 뒤 조회한다
+  const [ready, setReady] = useState(!IS_STATIC);
+  useEffect(() => {
+    if (!IS_STATIC) return;
+    const fromUrl = (new URLSearchParams(window.location.search).get("symbols") ?? "").split(",").map(normalizeSymbol).filter(isSupported);
+    const uniq = [...new Set(fromUrl)].slice(0, 5);
+    if (uniq.length >= 2) setSymbols(uniq);
+    setReady(true);
+  }, []);
   const [period, setPeriod] = useState("1y");
   const [mode, setMode] = useState<"price" | "total">("total");
   const [data, setData] = useState<CompareResult | null>(null);
@@ -37,6 +49,7 @@ export default function CompareClient({ initial, showPresets = true }: { initial
   const chartRef = useRef<IChartApi | null>(null);
 
   useEffect(() => {
+    if (!ready) return;
     if (symbols.length < 2) {
       setData(null);
       return;
@@ -44,19 +57,14 @@ export default function CompareClient({ initial, showPresets = true }: { initial
     let alive = true;
     setLoading(true);
     setError(null);
-    fetch(`/api/compare?symbols=${symbols.join(",")}&period=${period}`)
-      .then(async (r) => {
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
-        return j as CompareResult;
-      })
+    fetchCompare(symbols, period)
       .then((j) => alive && setData(j))
       .catch((e) => alive && setError(String(e.message ?? e)))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [symbols, period]);
+  }, [symbols, period, ready]);
 
   const colorOf = useMemo(() => {
     const m: Record<string, string> = {};

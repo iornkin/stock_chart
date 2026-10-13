@@ -4,11 +4,12 @@ import { getQuotes } from "@/lib/data/quotes";
 import { allSymbols } from "@/lib/instruments";
 import { fmtPrice } from "@/lib/format";
 import { PctBadge, Section } from "@/components/ui";
+import { perRequest } from "@/lib/page-mode";
 
-export const dynamic = "force-dynamic";
 export const metadata = { title: "지원 종목" };
 
 export default async function StocksPage() {
+  await perRequest();
   const quotes = await getQuotes(allSymbols(), "list");
   return (
     <div className="flex flex-col gap-5">

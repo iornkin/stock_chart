@@ -1,11 +1,12 @@
 import CompareClient from "@/components/CompareClient";
 import { Section } from "@/components/ui";
 import { isSupported, normalizeSymbol } from "@/lib/instruments";
+import { readSearchParams } from "@/lib/page-mode";
 
 export const metadata = { title: "종목 비교" };
 
 export default async function ComparePage({ searchParams }: { searchParams: Promise<{ symbols?: string }> }) {
-  const sp = await searchParams;
+  const sp = await readSearchParams(searchParams);
   const initial = (sp.symbols ?? "QQQ,VOO").split(",").map(normalizeSymbol).filter(isSupported).slice(0, 5);
   return (
     <div className="flex flex-col gap-5">

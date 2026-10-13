@@ -1,6 +1,7 @@
 name: CI
 on:
   push:
+    branches-ignore: [data]
   pull_request:
 jobs:
   check:
@@ -15,3 +16,5 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # 정적 사이트(GitHub Pages) 빌드가 깨지지 않았는지 확인 (빈 DB 로 빌드)
+      - run: npm run build:static

@@ -77,6 +77,20 @@ async function jobRefreshQuotes(ctx: JobContext): Promise<JobResult> {
   const symbols = ctx.symbols ?? [...allSymbols(), ...MARKET_SYMBOLS.map((m) => m.symbol), ...auxHoldingSymbols()];
   const r = await refreshQuotes(symbols);
   ctx.log(`시세 ${r.ok.length}/${symbols.length}`);
+  // 정적 사이트는 화면에서 분봉을 받아올 수 없으므로 장중·장 마감 직후에는 5분봉도 함께 갱신한다
+  const phase = marketStatus(ctx.now).phase;
+  if (env.collectAllIntervals && !ctx.symbols && (phase === "regular" || phase === "post")) {
+    let n = 0;
+    for (const s of allSymbols()) {
+      try {
+        await refreshBars(s, "5m");
+        n++;
+      } catch (e) {
+        ctx.log(`5분봉 ${s} 실패: ${(e as Error).message}`);
+      }
+    }
+    ctx.log(`5분봉 ${n}/${allSymbols().length}`);
+  }
   return summarize(r.ok.length, r.failed, "시세");
 }
 
@@ -144,6 +158,15 @@ async function jobCollectEod(ctx: JobContext): Promise<JobResult> {
       ok++;
     } catch (e) {
       failed.push({ symbol: s, error: (e as Error).message });
+    }
+    if (env.collectAllIntervals && universe.includes(s)) {
+      for (const i of ["60m", "1wk", "1mo"] as const) {
+        try {
+          await refreshBars(s, i);
+        } catch (e) {
+          failed.push({ symbol: `${s}(${i})`, error: (e as Error).message });
+        }
+      }
     }
   }
   // 배당 상세 (지급일 포함): 인컴·배당 ETF 와 배당 기록이 있는 종목은 매일, 그 외는 주 1회(월요일)

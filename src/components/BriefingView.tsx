@@ -1,7 +1,8 @@
 /** 종목별 일일 브리핑 표시 (서버 컴포넌트) */
 import type { BriefingNews, Evidence, KeyValue, MarketBriefing, Statement, SymbolBriefing, UpcomingItem } from "@/lib/briefing/types";
 import { KIND_LABEL } from "@/lib/briefing/types";
-import { formatEt, relativeTime } from "@/lib/time";
+import { formatEt } from "@/lib/time";
+import RelTime from "./RelTime";
 import { fmtCompact, fmtPct, fmtPrice } from "@/lib/format";
 import { Empty, KindBadge, Notice } from "./ui";
 
@@ -80,7 +81,7 @@ export function NewsCards({ items }: { items: BriefingNews[] }) {
             </span>
           </p>
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
-            <span className="num">게시 {formatEt(n.publishedAt)} ({relativeTime(n.publishedAt)})</span>
+            <span className="num">게시 {formatEt(n.publishedAt)} <RelTime ms={n.publishedAt} paren /></span>
             <span>출처 {n.publisher ?? "미상"}</span>
             <span>수집 {n.provider}</span>
             <a href={n.url} target="_blank" rel="noopener noreferrer" className="link">

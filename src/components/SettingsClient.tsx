@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import { DEFAULT_PREFS, usePrefs } from "@/lib/client/prefs";
+import { statusUrl } from "@/lib/client/data-api";
+import { describeCron } from "@/lib/cron-describe";
+import { IS_STATIC, REPO_URL } from "@/lib/static-mode";
 
 interface StatusResp {
   schedule: Record<string, string | number | boolean>;
@@ -8,6 +11,8 @@ interface StatusResp {
   worker: { alive: boolean; owner: string | null; leaseUntil: number | null };
   adminEnabled: boolean;
   llm: { enabled: boolean; model: string; sessions: string[] };
+  /** 정적 사이트: GitHub Actions 예약 실행(cron, UTC) */
+  actionsCrons?: string[];
 }
 
 const SCHEDULE_FIELDS: { key: string; label: string; type: "number" | "time" | "bool"; help?: string }[] = [
@@ -33,13 +38,13 @@ export default function SettingsClient() {
   const [msg, setMsg] = useState<string | null>(null);
 
   const load = () =>
-    fetch("/api/status")
-      .then((r) => r.json())
+    fetch(statusUrl(), IS_STATIC ? { cache: "no-cache" } : undefined)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((j: StatusResp) => {
         setStatus(j);
         setDraft(j.schedule);
       })
-      .catch(() => setMsg("서버 상태를 불러오지 못했습니다"));
+      .catch(() => setMsg(IS_STATIC ? "업데이트 일정 정보를 불러오지 못했습니다" : "서버 상태를 불러오지 못했습니다"));
   useEffect(() => {
     load();
     try {
@@ -105,7 +110,11 @@ export default function SettingsClient() {
               </button>
             ))}
           </div>
-          <p className="mt-1 text-xs text-muted">새로고침은 서버에 저장된 최신 데이터를 다시 읽으며, 서버는 캐시 정책에 따라 제공처 호출 여부를 결정합니다.</p>
+          <p className="mt-1 text-xs text-muted">
+            {IS_STATIC
+              ? "정적 사이트에서는 새 스냅샷이 배포되었는지 확인하고(최소 5분 간격), 바뀌었으면 페이지를 다시 불러옵니다."
+              : "새로고침은 서버에 저장된 최신 데이터를 다시 읽으며, 서버는 캐시 정책에 따라 제공처 호출 여부를 결정합니다."}
+          </p>
         </div>
         <div>
           <p className="mb-1 text-sm text-ink-2">차트 기본 설정</p>
@@ -123,6 +132,70 @@ export default function SettingsClient() {
         </div>
       </section>
 
+      {IS_STATIC ? (
+        <section className="card flex flex-col gap-4 p-5">
+          <h2 className="font-semibold">데이터 업데이트 일정 (GitHub Actions)</h2>
+          <p className="text-sm text-ink-2">
+            이 사이트는 정적 스냅샷입니다. GitHub Actions 가 아래 시각에 실행되어 그 시점에 해야 할 수집·브리핑 작업을 처리한 뒤 사이트를 다시 배포합니다. GitHub 사정으로 실행이 수십 분 늦어지거나 건너뛰어질 수 있습니다.
+          </p>
+          {status ? (
+            <>
+              {status.actionsCrons?.length ? (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-line text-left text-muted">
+                      <th className="py-1 font-normal">한국 시간</th>
+                      <th className="py-1 font-normal">UTC</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {status.actionsCrons.map((c) => {
+                      const d = describeCron(c);
+                      return (
+                        <tr key={c} className="border-b border-line">
+                          <td className="py-1">{d.kst}</td>
+                          <td className="py-1 text-muted">{d.utc}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="text-xs text-muted">예약 실행 정보 없음</p>
+              )}
+              <details className="rounded-lg border border-line p-3">
+                <summary className="text-sm font-semibold">작업별 실행 조건 (미국 동부 시간)</summary>
+                <ul className="mt-2 text-sm">
+                  {status.scheduleRows.map((r) => (
+                    <li key={r.job} className="flex justify-between gap-2 border-b border-line py-1">
+                      <span className="text-ink-2">{r.label}</span>
+                      <span className="text-right text-xs">{r.when}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-xs text-muted">예약 실행 시점에 조건을 만족한 작업만 실행됩니다. 장중 시세 갱신 주기는 예약 실행 간격을 따릅니다.</p>
+              </details>
+              <p className="text-xs text-muted">
+                AI 서술: {status.llm.enabled ? `사용 (${status.llm.model}, 대상: ${status.llm.sessions.join(", ")})` : "사용 안 함 (ANTHROPIC_API_KEY 미설정 — 규칙 기반 브리핑만 생성)"}
+              </p>
+            </>
+          ) : (
+            <div className="skeleton h-24" />
+          )}
+          <p className="text-xs text-muted">
+            일정 변경과 수동 실행은 저장소의 <code>.github/workflows/pages.yml</code> 과 GitHub 의 Actions 탭에서 합니다.
+            {REPO_URL && (
+              <>
+                {" "}
+                <a href={`${REPO_URL}/actions`} target="_blank" rel="noopener noreferrer" className="link">
+                  Actions 실행 기록 보기
+                </a>
+              </>
+            )}
+          </p>
+          {msg && <p className="text-sm text-ink-2" role="status">{msg}</p>}
+        </section>
+      ) : (
       <section className="card flex flex-col gap-4 p-5">
         <h2 className="font-semibold">데이터 업데이트 일정 (서버)</h2>
         {status ? (
@@ -187,6 +260,7 @@ export default function SettingsClient() {
         )}
         {msg && <p className="text-sm text-ink-2" role="status">{msg}</p>}
       </section>
+      )}
     </div>
   );
 }

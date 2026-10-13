@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:static": "STATIC_EXPORT=1 ON_DEMAND_FETCH=0 next build && STATIC_EXPORT=1 node --disable-warning=ExperimentalWarning --import tsx scripts/export-static.ts",
     "start": "NODE_OPTIONS=--disable-warning=ExperimentalWarning next start",
     "worker": "node --disable-warning=ExperimentalWarning --import tsx scripts/worker.ts",
     "job": "node --disable-warning=ExperimentalWarning --import tsx scripts/run-job.ts",
@@ -17,7 +18,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:e2e": "tsx tests/e2e/run.ts"
+    "test:e2e": "tsx tests/e2e/run.ts",
+    "test:e2e:static": "tsx tests/e2e/static.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
