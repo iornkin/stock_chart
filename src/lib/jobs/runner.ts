@@ -8,6 +8,7 @@ import { marketStatus, sessionTimes, isTradingDay } from "../market-calendar";
 import { etDate, etParts, etToUtc } from "../time";
 import { JOBS, JOB_LABELS, type JobName, type JobResult } from "./jobs";
 import { getSchedule, type ScheduleConfig } from "./schedule";
+import { redactSecrets } from "../redact";
 
 export interface RunOptions {
   slot?: string;
@@ -21,7 +22,9 @@ export interface RunOptions {
 export async function runJob(job: JobName, opts: RunOptions = {}): Promise<JobResult & { runId: number }> {
   const started = Date.now();
   const slot = opts.slot ?? `manual:${started}`;
-  const log = opts.log ?? ((m: string) => console.log(`[${job}] ${m}`));
+  const baseLog = opts.log ?? ((m: string) => console.log(`[${job}] ${m}`));
+  // 공개 저장소의 Actions 로그에도 남으므로 비밀 값은 가린다
+  const log = (m: string) => baseLog(redactSecrets(m));
   const ins = run(
     "INSERT INTO job_runs(job, slot, started_at, status, trigger) VALUES(?,?,?,?,?)",
     job,
@@ -37,6 +40,7 @@ export async function runJob(job: JobName, opts: RunOptions = {}): Promise<JobRe
   } catch (e) {
     result = { status: "failed", message: (e as Error).message ?? String(e) };
   }
+  result = { ...result, message: redactSecrets(result.message), details: result.details ? JSON.parse(redactSecrets(JSON.stringify(result.details))) : undefined };
   run(
     "UPDATE job_runs SET finished_at=?, status=?, message=?, details=? WHERE id=?",
     Date.now(),

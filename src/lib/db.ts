@@ -190,9 +190,26 @@ export function getDb(): DatabaseSync {
   db.exec("PRAGMA busy_timeout = 10000;");
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec(SCHEMA);
+  scrubLeakedSecrets(db);
   globalThis.__stockDb = db;
   globalThis.__stockDbPath = file;
   return db;
+}
+
+/**
+ * 비밀 값이 섞여 저장된 과거 오류 기록 제거 (비밀 값을 잘못 넣었을 때 헤더 오류 문구에 값이 포함된 경우)
+ * 이후 기록은 저장 시점에 redactSecrets 로 가려진다.
+ */
+function scrubLeakedSecrets(db: DatabaseSync) {
+  const leak = "(%s LIKE '%API_KEY=%' OR %s LIKE '%Headers.append%' OR %s LIKE '%_TOKEN=%')";
+  const cond = (col: string) => leak.replaceAll("%s", col);
+  try {
+    db.exec(`DELETE FROM provider_calls WHERE ${cond("error")}`);
+    db.exec(`UPDATE job_runs SET details = NULL WHERE ${cond("details")}`);
+    db.exec(`UPDATE job_runs SET message = '오류 내용에 비밀 값이 포함되어 삭제됨' WHERE ${cond("message")}`);
+  } catch {
+    // 읽기 전용 등으로 실패해도 무시
+  }
 }
 
 /** 테스트용: 연결 종료 */

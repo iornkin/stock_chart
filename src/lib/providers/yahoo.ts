@@ -217,7 +217,14 @@ export async function fetchChart(
   range: string,
   opts: { events?: boolean } = {},
 ): Promise<ChartResult> {
-  const params = new URLSearchParams({ interval, range, includePrePost: "false" });
+  const params = new URLSearchParams({ interval, includePrePost: "false" });
+  const days = /^(\d+)d$/.exec(range);
+  if (interval === "60m" && days) {
+    // 1시간봉은 'range=730d' 가 상장 2~3년 된 종목에서 422 오류를 내므로 기간을 직접 지정 (최근 729일)
+    const now = Math.floor(Date.now() / 1000);
+    params.set("period1", String(now - (Number(days[1]) - 1) * 86400));
+    params.set("period2", String(now));
+  } else params.set("range", range);
   if (opts.events) params.set("events", "div|split");
   const url = `${env.yahooQuery1}/v8/finance/chart/${encodeURIComponent(symbol)}?${params}`;
   const json = await requestJson<V8Chart>(P, url, { headers: { "User-Agent": BROWSER_UA } });

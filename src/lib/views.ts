@@ -2,6 +2,7 @@
 import { all } from "./db";
 import { env } from "./env";
 import { lastFailure, lastSuccessAt } from "./jobs/runner";
+import { redactSecrets } from "./redact";
 
 export function sparkCloses(symbol: string, n = 22): number[] {
   return all<{ close: number }>("SELECT close FROM bars WHERE symbol=? AND interval='1d' ORDER BY ts DESC LIMIT ?", symbol, n)
@@ -29,7 +30,7 @@ export function providerStats(sinceMs: number) {
        (SELECT error FROM provider_calls p2 WHERE p2.provider = p.provider AND p2.ok = 0 ORDER BY at DESC LIMIT 1) AS last_error
      FROM provider_calls p WHERE at >= ? GROUP BY provider ORDER BY provider`,
     sinceMs,
-  );
+  ).map((r) => ({ ...r, last_error: r.last_error ? redactSecrets(r.last_error) : null }));
 }
 
 export function dataHealth() {
