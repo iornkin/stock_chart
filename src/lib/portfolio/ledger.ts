@@ -10,7 +10,7 @@
  * - 분배금 재투자: 분배금 수익으로 기록한 뒤 같은 날 그 돈으로 매수한 것으로 처리 (현금 = 세후 분배금 − 매수 금액)
  * 항등식: 총자산 − 순납입 원금 = 미실현 손익 + 실현 손익 + 세후 분배금
  */
-import type { SimpleHolding, Txn } from "./types";
+import { TXN_KO as TXN_LABEL, type SimpleHolding, type Txn } from "./types";
 
 export interface Position {
   symbol: string;
@@ -18,10 +18,17 @@ export interface Position {
   /** 현재 보유분의 매수 원가 (수수료 포함) */
   cost: number;
   avgCost: number;
-  /** 거래 당시 환율로 환산한 원가 (모든 매수에 환율이 있을 때만) */
+  /** 거래 당시 환율로 환산한 원가 (모든 매수에 환율이 있을 때만 — fxOn 을 주면 빠진 환율을 그날 종가로 채움) */
   costKrw: number | null;
   realized: number;
   dividendsGross: number;
+  /** 세후 분배금 (수령·재투자 합계) */
+  dividendsNet: number;
+  /** 총 매수 금액: 기초 보유·매수 (수수료 포함, 분배금 재투자 제외) — 종목별 총수익률의 분모 */
+  invested: number;
+  investedKrw: number | null;
+  realizedKrw: number | null;
+  dividendsNetKrw: number | null;
   firstDate: string | null;
   price: number | null;
   value: number | null;
@@ -59,6 +66,10 @@ export interface LedgerSummary {
   totalReturnPct: number | null;
   /** 원화 납입 원금 (입금·기초 보유에 환율이 모두 있을 때) */
   netContributionsKrw: number | null;
+  /** 거래 당시 환율이 없어 그날 원/달러 종가(fxOn)로 근사한 거래 수 */
+  fxEstimated: number;
+  /** 환율을 끝내 알 수 없는 거래 (원화 기준 계산 불가) */
+  fxMissing: string[];
   issues: LedgerIssue[];
   /** 분배금 기록 (날짜순) */
   dividendRecords: { date: string; symbol: string; gross: number; tax: number; reinvested: boolean }[];
@@ -70,8 +81,27 @@ export function sortTxns(txns: Txn[]): Txn[] {
   return [...txns].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
 }
 
-export function computeLedger(txns: Txn[], prices: Record<string, number | null | undefined>, asOf?: string): LedgerSummary {
-  const pos = new Map<string, { shares: number; cost: number; costKrw: number | null; realized: number; div: number; first: string | null }>();
+export interface LedgerOptions {
+  /** 거래에 환율을 적지 않았을 때 쓸 그날 원/달러 환율 (보통 원/달러 종가) */
+  fxOn?: (date: string) => number | null;
+}
+
+type PosAcc = {
+  shares: number;
+  cost: number;
+  costKrw: number | null;
+  realized: number;
+  realizedKrw: number | null;
+  div: number;
+  divNet: number;
+  divNetKrw: number | null;
+  invested: number;
+  investedKrw: number | null;
+  first: string | null;
+};
+
+export function computeLedger(txns: Txn[], prices: Record<string, number | null | undefined>, asOf?: string, opts: LedgerOptions = {}): LedgerSummary {
+  const pos = new Map<string, PosAcc>();
   const issues: LedgerIssue[] = [];
   let cash = 0;
   let deposits = 0;
@@ -82,18 +112,26 @@ export function computeLedger(txns: Txn[], prices: Record<string, number | null 
   let divGross = 0;
   let divTax = 0;
   let fees = 0;
+  let fxEstimated = 0;
+  const fxMissing: string[] = [];
   const dividendRecords: LedgerSummary["dividendRecords"] = [];
   const get = (s: string) => {
     let p = pos.get(s);
     if (!p) {
-      p = { shares: 0, cost: 0, costKrw: 0, realized: 0, div: 0, first: null };
+      p = { shares: 0, cost: 0, costKrw: 0, realized: 0, realizedKrw: 0, div: 0, divNet: 0, divNetKrw: 0, invested: 0, investedKrw: 0, first: null };
       pos.set(s, p);
     }
     return p;
   };
+  const addKrw = (cur: number | null, usd: number, fx: number | null) => (cur !== null && fx ? cur + usd * fx : null);
   for (const t of sortTxns(txns)) {
     if (asOf && t.date > asOf) continue;
-    const fx = t.fx && t.fx > 0 ? t.fx : null;
+    // 거래 당시 환율 (입력값 → 없으면 그날 원/달러 종가로 근사)
+    const given = t.fx && t.fx > 0 ? t.fx : null;
+    const near = given ? null : (opts.fxOn?.(t.date) ?? null);
+    const fx = given ?? near;
+    if (near) fxEstimated++;
+    if (!fx && opts.fxOn) fxMissing.push(`${t.date} ${TXN_LABEL[t.type]}${t.symbol ? ` ${t.symbol}` : ""}`);
     const num = (v: number | undefined) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
     switch (t.type) {
       case "opening":
@@ -107,7 +145,9 @@ export function computeLedger(txns: Txn[], prices: Record<string, number | null 
         const fee = t.type === "buy" ? num(t.fee) : 0;
         p.shares += num(t.shares);
         p.cost += gross + fee;
-        p.costKrw = p.costKrw !== null && fx ? p.costKrw + (gross + fee) * fx : null;
+        p.costKrw = addKrw(p.costKrw, gross + fee, fx);
+        p.invested += gross + fee;
+        p.investedKrw = addKrw(p.investedKrw, gross + fee, fx);
         p.first ??= t.date;
         fees += fee;
         if (t.type === "buy") {
@@ -134,7 +174,11 @@ export function computeLedger(txns: Txn[], prices: Record<string, number | null 
         const outCost = avg * q;
         const proceeds = q * num(t.price) - num(t.fee);
         const r = proceeds - outCost;
-        if (p.costKrw !== null) p.costKrw -= p.costKrw * (q / p.shares);
+        if (p.costKrw !== null) {
+          const outKrw = p.costKrw * (q / p.shares);
+          p.realizedKrw = p.realizedKrw !== null && fx ? p.realizedKrw + proceeds * fx - outKrw : null;
+          p.costKrw -= outKrw;
+        } else p.realizedKrw = null;
         p.shares -= q;
         p.cost -= outCost;
         if (p.shares < 1e-7) {
@@ -177,6 +221,8 @@ export function computeLedger(txns: Txn[], prices: Record<string, number | null 
         }
         const p = get(t.symbol);
         p.div += gross;
+        p.divNet += gross - tax;
+        p.divNetKrw = addKrw(p.divNetKrw, gross - tax, fx);
         divGross += gross;
         divTax += tax;
         cash += gross - tax;
@@ -190,7 +236,7 @@ export function computeLedger(txns: Txn[], prices: Record<string, number | null 
           }
           p.shares += q;
           p.cost += q * px;
-          p.costKrw = p.costKrw !== null && fx ? p.costKrw + q * px * fx : null;
+          p.costKrw = addKrw(p.costKrw, q * px, fx);
           p.first ??= t.date;
           cash -= q * px;
           if (q * px > gross - tax + 0.01) issues.push({ txnId: t.id, message: `${t.date} ${t.symbol} 재투자 금액이 세후 분배금보다 커 차액을 현금에서 뺐습니다.`, level: "warn" });
@@ -212,6 +258,11 @@ export function computeLedger(txns: Txn[], prices: Record<string, number | null 
         costKrw: p.costKrw,
         realized: p.realized,
         dividendsGross: p.div,
+        dividendsNet: p.divNet,
+        invested: p.invested,
+        investedKrw: p.investedKrw,
+        realizedKrw: p.realizedKrw,
+        dividendsNetKrw: p.divNetKrw,
         firstDate: p.first,
         price,
         value,
@@ -248,6 +299,8 @@ export function computeLedger(txns: Txn[], prices: Record<string, number | null 
     totalPnl,
     totalReturnPct: netContributions > 0 && missingPrices.length === 0 ? (totalPnl / netContributions) * 100 : null,
     netContributionsKrw: contribKrw,
+    fxEstimated,
+    fxMissing,
     issues,
     dividendRecords,
   };
@@ -256,20 +309,23 @@ export function computeLedger(txns: Txn[], prices: Record<string, number | null 
 const round = (v: number) => Math.round(v * 1e6) / 1e6;
 
 /** 간편 입력 요약 (거래 내역 없이 현재 보유 상태만) */
-export function computeSimple(holdings: SimpleHolding[], cash: number, prices: Record<string, number | null | undefined>) {
+export function computeSimple(holdings: SimpleHolding[], cash: number, prices: Record<string, number | null | undefined>, opts: LedgerOptions = {}) {
   const positions = holdings
     .filter((h) => h.symbol && h.shares > 0)
     .map((h) => {
       const price = prices[h.symbol] ?? null;
       const cost = h.shares * h.avgCost;
       const value = price !== null ? h.shares * price : null;
+      // 평균 매수 환율 → 없으면 최초 매수일의 원/달러 종가로 근사
+      const nearFx = !h.avgFx && h.firstDate ? (opts.fxOn?.(h.firstDate) ?? null) : null;
       return {
         id: h.id,
         symbol: h.symbol,
         shares: h.shares,
         avgCost: h.avgCost,
         cost,
-        costKrw: h.avgFx ? cost * h.avgFx : null,
+        costKrw: h.avgFx ? cost * h.avgFx : nearFx ? cost * nearFx : null,
+        fxEstimated: Boolean(nearFx),
         price,
         value,
         unrealized: value !== null ? value - cost : null,

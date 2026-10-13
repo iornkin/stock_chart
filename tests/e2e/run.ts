@@ -383,7 +383,7 @@ async function main() {
     delete process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS;
     check("PWA: 오프라인이면 '연결 안 됨' 안내 (오래된 시세를 보여 주지 않음)", offlineText.includes("인터넷에 연결되어 있지 않습니다") && !offlineText.includes("$"));
 
-    // 개인 자산·가상 투자·백테스트·시뮬레이터·스트레스 테스트·전략·백업
+    // 내 자산·백테스트·시뮬레이터·스트레스 테스트·전략·백업
     await featureChecks(browser, BASE, OUT, check, async (s) => {
       const j = await (await fetch(`${BASE}/api/quotes?symbols=${encodeURIComponent(s)}`)).json();
       return j.quotes[0].price as number;

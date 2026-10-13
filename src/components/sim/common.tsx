@@ -1,5 +1,5 @@
 "use client";
-/** 내 자산·가상 투자·백테스트·시뮬레이터 화면에서 함께 쓰는 입력·표시 조각 */
+/** 내 자산·백테스트·시뮬레이터 화면에서 함께 쓰는 입력·표시 조각 */
 import Link from "next/link";
 import { useId, useMemo, type ReactNode } from "react";
 import { CATEGORY_LABELS, CATEGORY_ORDER, INSTRUMENTS } from "@/config/instruments";
@@ -18,6 +18,12 @@ export function usd(v: number | null | undefined, digits = 2): string {
 export function krw(v: number | null | undefined): string {
   if (!isNum(v)) return "-";
   return `${v < 0 ? "−" : ""}₩${Math.round(Math.abs(v)).toLocaleString("ko-KR")}`;
+}
+
+export function signedKrw(v: number | null | undefined): string {
+  if (!isNum(v)) return "-";
+  const r = Math.round(v);
+  return `${r > 0 ? "+" : r < 0 ? "−" : ""}₩${Math.abs(r).toLocaleString("ko-KR")}`;
 }
 
 export function signedUsd(v: number | null | undefined): string {

@@ -70,41 +70,6 @@ export const EMPTY_PORTFOLIO: PortfolioData = {
   updatedAt: 0,
 };
 
-export interface VirtualTrade {
-  id: string;
-  side: "buy" | "sell";
-  symbol: string;
-  shares: number;
-  /** 체결 가정 가격 */
-  price: number;
-  /** 체결에 쓴 시세 */
-  quotePrice: number;
-  /** 시세 기준 시각 (제공처 마지막 거래 시각, epoch ms) */
-  quoteTime: number | null;
-  quoteSource: string;
-  /** 지연 여부 표시 */
-  quoteDelay: string;
-  slippagePct: number;
-  fee: number;
-  /** 주문 실행 시각 (epoch ms) */
-  at: number;
-  /** 체결 기준 거래일 (ET) */
-  date: string;
-}
-
-export interface VirtualAccount {
-  version: 1;
-  initialCash: number;
-  /** 시작 기준일 (ET) */
-  startDate: string;
-  createdAt: number;
-  drip: boolean;
-  slippagePct: number;
-  feePct: number;
-  taxPct: number;
-  trades: VirtualTrade[];
-}
-
 export interface StrategyItem {
   symbol: string;
   weight: number;

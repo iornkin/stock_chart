@@ -6,8 +6,7 @@ import { dividendStress, episodeImpact, estimateBeta, findEpisodes, linearShock,
 import { decodeSeries, encodeSeries, type PriceSeries, type SeriesDiv } from "@/lib/sim/series";
 import { incomeInfo } from "@/lib/sim/income";
 import { computeLedger, computeSimple, convertSimpleToLedger, ledgerTimeline } from "@/lib/portfolio/ledger";
-import { computeVirtual, planOrder } from "@/lib/portfolio/virtual";
-import type { Txn, VirtualAccount } from "@/lib/portfolio/types";
+import type { Txn } from "@/lib/portfolio/types";
 import { addDays } from "@/lib/time";
 
 /** 평일만 이어지는 거래일 */
@@ -380,42 +379,6 @@ describe("개인 자산 회계", () => {
   it("날짜별 평가금액 재구성", () => {
     const tl = ledgerTimeline(txns.slice(0, 3), ["2025-01-02", "2025-01-03", "2025-02-03"], () => 28);
     expect(tl.value).toEqual([10_000, 10_000 - 2702 + 2800, 10_000 - 2702 - 2902 + 5600]);
-  });
-});
-
-describe("가상 투자", () => {
-  const d = tradingDays("2026-01-02", 120);
-  const x = mkSeries("JEPI", d, () => 50, [
-    { ex: "2026-02-02", pay: "2026-02-04", amount: 0.4, kind: "regular" },
-    { ex: "2026-03-02", pay: "2026-03-04", amount: 0.5, kind: "regular" },
-    { ex: "2026-04-01", pay: "2026-05-04", amount: 0.45, kind: "regular" },
-  ]);
-  const trade = (side: "buy" | "sell", date: string, shares: number, at: number) => ({ id: `${side}${at}`, side, symbol: "JEPI", shares, price: 50, quotePrice: 50, quoteTime: null, quoteSource: "test", quoteDelay: "지연", slippagePct: 0, fee: 0, at, date });
-  const acc = (over: Partial<VirtualAccount> = {}): VirtualAccount => ({ version: 1, initialCash: 10_000, startDate: "2026-01-02", createdAt: 0, drip: false, slippagePct: 0, feePct: 0, taxPct: 0, trades: [trade("buy", "2026-01-15", 100, 1), trade("buy", "2026-03-02", 10, 2)], ...over });
-
-  it("배당락일 전날까지 보유한 수량만 분배금을 받고, 지급일이 지나야 현금이 된다", () => {
-    const s = computeVirtual(acc(), { JEPI: x }, { JEPI: 50 }, "2026-04-15");
-    // 2월: 100주 × 0.4, 3월: 배당락일(03-02)에 산 10주는 제외 → 100주 × 0.5
-    expect(s.dividendsGross).toBeCloseTo(90, 9);
-    expect(s.pending).toHaveLength(1);
-    expect(s.pending[0].gross).toBeCloseTo(110 * 0.45, 9);
-    expect(s.cash).toBeCloseTo(10_000 - 5_500 + 90, 9);
-  });
-
-  it("재투자를 켜면 지급일 종가로 주식이 늘어난다", () => {
-    const s = computeVirtual(acc({ drip: true }), { JEPI: x }, { JEPI: 50 }, "2026-04-15");
-    const p = s.positions.find((q) => q.symbol === "JEPI")!;
-    expect(p.shares).toBeCloseTo(110 + 40 / 50 + (100.8 * 0.5) / 50, 9);
-  });
-
-  it("주문 확인: 현금 부족·보유 초과 매도는 막고 슬리피지·수수료를 반영", () => {
-    const st = computeVirtual(acc(), { JEPI: x }, { JEPI: 50 }, "2026-04-15");
-    expect(planOrder(st, { slippagePct: 0, feePct: 0 }, "buy", "JEPI", 1000, 50).ok).toBe(false);
-    expect(planOrder(st, { slippagePct: 0, feePct: 0 }, "sell", "JEPI", 111, 50).ok).toBe(false);
-    const p = planOrder(st, { slippagePct: 0.1, feePct: 0.25 }, "buy", "JEPI", 10, 50);
-    expect(p.fillPrice).toBeCloseTo(50.05, 9);
-    expect(p.fee).toBeCloseTo(500.5 * 0.0025, 9);
-    expect(planOrder(st, { slippagePct: 0, feePct: 0 }, "buy", "JEPI", 1, null).ok).toBe(false);
   });
 });
 

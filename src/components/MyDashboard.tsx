@@ -1,7 +1,7 @@
 "use client";
 /** 대시보드의 '내 투자' 카드 — 브라우저에 저장된 내 자산·전략·최근 결과 (입력 전에는 금액을 표시하지 않음) */
 import Link from "next/link";
-import { usePortfolio, useRuns, useStrategies, useVirtual, useFx } from "@/lib/client/user-data";
+import { usePortfolio, useRuns, useStrategies, useFx } from "@/lib/client/user-data";
 import { usePortfolioSummary } from "@/lib/client/portfolio-summary";
 import { Section } from "@/components/ui";
 import { KV, Money, pct, tone, usd } from "@/components/sim/common";
@@ -11,7 +11,6 @@ export default function MyDashboard() {
   const s = usePortfolioSummary(p.value);
   const strategies = useStrategies();
   const runs = useRuns();
-  const virtual = useVirtual();
   const fx = useFx();
   if (!p.loaded) return <div className="skeleton h-40" aria-label="내 투자 현황을 불러오는 중" />;
   const ledger = s.mode === "ledger";
@@ -23,11 +22,6 @@ export default function MyDashboard() {
       <Link href="/strategies" className="hover:text-accent">
         최근 계산 결과 {runs.value.length}개
       </Link>
-      {virtual.value && (
-        <Link href="/paper" className="hover:text-accent">
-          가상 계좌 거래 {virtual.value.trades.length}건
-        </Link>
-      )}
     </p>
   );
   return (
@@ -49,10 +43,10 @@ export default function MyDashboard() {
           <div className="grid grid-cols-2 gap-2">
             <KV label="총자산" value={<Money v={s.missingPrices.length ? null : s.totalAssets} fx={fx.rate} />} sub={s.missingPrices.length ? `${s.missingPrices.join(", ")} 시세 없음` : undefined} />
             <KV
-              label={ledger ? "투자 손익" : "미실현 손익"}
-              value={<Money v={ledger ? s.totalPnl : s.missingPrices.length ? null : s.unrealized} fx={fx.rate} signed />}
-              valueClass={tone(ledger ? s.totalPnl : s.unrealized)}
-              sub={pct(s.totalReturnPct)}
+              label={ledger ? "총수익률 (달러 기준)" : "평가 수익률 (달러 기준)"}
+              value={pct(s.totalReturnPct)}
+              valueClass={tone(s.totalReturnPct)}
+              sub={<Money v={ledger ? s.totalPnl : s.missingPrices.length ? null : s.unrealized} fx={fx.rate} signed />}
             />
             <KV label="최근 12개월 실제 분배금" value={ledger ? usd(s.dividendsActualTtm) : "기록 없음"} />
             <KV label="예상 연간 분배금" value={usd(s.expectedAnnual, 0)} sub="추정 · 확정 아님" />

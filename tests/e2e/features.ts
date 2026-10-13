@@ -1,10 +1,11 @@
 /**
- * 개인 자산·가상 투자·백테스트·시뮬레이터·스트레스 테스트·전략·백업 e2e 확인 (서버 모드·정적 모드 공용)
+ * 내 자산(수익률·원화 기준)·백테스트·시뮬레이터·스트레스 테스트·전략·백업 e2e 확인 (서버 모드·정적 모드 공용)
  * ⚠ 합성(테스트용) 시장 데이터로 실행한다. 실제 시세가 아니다.
  */
 import fs from "node:fs";
 import path from "node:path";
 import type { Browser, Page } from "@playwright/test";
+import { fmtPct } from "@/lib/format";
 
 type Check = (name: string, ok: boolean, detail?: string) => void;
 
@@ -64,7 +65,13 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   const total = 10 * qqq + 100 * jepi + 1000;
   t = await waitText(page, money(total));
   check(`${P}내 자산(간편): 총자산 = 수량 × 현재가 + 현금`, t.includes(money(total)), `기대 ${money(total)}`);
-  check(`${P}내 자산(간편): 매수 원가 합계`, t.includes(money(9500)));
+  // 간편 입력 수익률 = (평가금액 − 매수 원가 9,500) ÷ 9,500 (최초 매수일이 없어 분배금 추정 없음)
+  const simpleRet = fmtPct(((10 * qqq + 100 * jepi - 9500) / 9500) * 100, 2);
+  check(`${P}내 자산(간편): 입력하자마자 총수익률·평가 수익률`, t.includes("총수익률") && t.includes("평가 수익률") && t.includes(simpleRet), simpleRet);
+  await page.getByRole("button", { name: "원화 기준 (환율 반영)" }).click();
+  t = await waitText(page, "원화 기준으로 계산할 수 없습니다");
+  check(`${P}내 자산(간편): 매수 환율·최초 매수일이 없으면 원화 기준 계산 안 함 (안내)`, t.includes("평균 매수 환율이나 최초 매수일을 넣으면"));
+  await page.getByRole("button", { name: "달러 기준" }).click();
   const tabs = page.getByRole("tablist", { name: "내 자산 화면" });
   await tabs.getByRole("tab", { name: "분배금" }).click();
   t = await waitText(page, "예상 연간 분배금 (추정)");
@@ -81,7 +88,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await page.getByRole("button", { name: "거래 내역 관리로 전환" }).click();
   t = await waitText(page, "기초 보유");
   check(`${P}전환: 기초 보유·입금 기록 생성`, t.includes("기초 보유") && t.includes("입금"));
-  check(`${P}전환: 총자산이 그대로 (수량·원가 중복 없음)`, t.includes(money(total)) && t.includes(`순납입 원금 ${money(10500)}`));
+  check(`${P}전환: 총자산이 그대로 (수량·원가 중복 없음)`, t.includes(money(total)) && t.includes(`투자 원금 ${money(10500)}`));
 
   // ── 거래 내역: 매수·매도·분배금·재투자·입출금 ──
   const txn = async (type: string, fields: Record<string, string>) => {
@@ -105,7 +112,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await tabs.getByRole("tab", { name: "분배금" }).click();
   t = await waitText(page, money(90));
   check(`${P}거래 내역: 실제 분배금 누적 (수령+재투자)`, t.includes(money(90)));
-  check(`${P}거래 내역: 외부 입출금은 원금으로 구분`, t.includes(`순납입 원금 ${money(10800)}`));
+  check(`${P}거래 내역: 외부 입출금은 원금으로 구분`, t.includes(`투자 원금 ${money(10800)}`));
   const cash = 1000 + 500 - 1001 + 2599 + 42.5 + (34 - 33) - 200;
   const value = 7 * qqq + 100.6 * jepi;
   t = await waitText(page, money(value + cash));
@@ -119,27 +126,15 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   check(`${P}거래 내역: 새로고침 후 유지`, t.includes("분배금 재투자") && t.includes(money(value + cash)));
   await page.screenshot({ path: path.join(out, `${slug}-portfolio.png`), fullPage: true });
 
-  // ── 가상 투자 ──
-  await go("/paper");
-  await waitText(page, "가상 계좌 만들기");
-  await page.getByLabel("가상 초기 자금").fill("10000");
-  await page.getByRole("button", { name: "가상 계좌 시작" }).click();
-  await waitText(page, "가상 주문");
-  await page.getByLabel("주문 종목").fill("JEPI");
-  await page.getByLabel("주문 수량").fill("10");
-  await waitText(page, "예상 체결");
-  await page.getByRole("button", { name: "가상 매수 실행" }).click();
-  t = await waitText(page, "가상 매수 완료");
-  check(`${P}가상 투자: 시세 기준 체결·시세 시각·지연 표시`, t.includes("가상 매수 완료") && t.includes("기준 시각") && t.includes("체결 거래일"));
-  check(`${P}가상 투자: 실제 주문 아님 안내`, t.includes("실제 증권 계좌로 전송되지 않습니다"));
-  await page.getByRole("button", { name: "매도", exact: true }).click();
-  await page.getByLabel("주문 수량").fill("1000");
-  t = await waitText(page, "보유 수량");
-  check(`${P}가상 투자: 보유 초과 매도 막음`, t.includes("보다 많이 팔 수 없습니다"));
-  await page.reload({ waitUntil: "networkidle" });
-  t = await waitText(page, "보유 종목");
-  check(`${P}가상 투자: 새로고침 후 유지·실제 자산과 분리`, t.includes("JEPI") && t.includes("가상 총자산"));
-  await page.screenshot({ path: path.join(out, `${slug}-paper.png`), fullPage: true });
+  // ── 수익률: 달러 기준 ↔ 원화 기준 (거래 환율이 없으면 그날 원/달러 종가로 근사) ──
+  await tabs.getByRole("tab", { name: "보유 종목", exact: true }).click();
+  t = await waitText(page, "종목별 수익률");
+  check(`${P}수익률: 종목별 평가 수익률·총수익률 (달러 기준)`, t.includes("총손익 (총수익률)") && t.includes("QQQ") && t.includes("JEPI"));
+  await page.getByRole("button", { name: "원화 기준 (환율 반영)" }).click();
+  t = await waitText(page, "환율 효과");
+  check(`${P}수익률: 원화 기준 버튼 → 환율 효과·원화 총수익률`, t.includes("환율 효과") && /달러 기준 [+−-]?[\d.]+% → 원화 기준 [+−-]?[\d.]+%/.test(t) && t.includes("₩") && t.includes("그날 원/달러 종가로 근사"));
+  await page.getByRole("button", { name: "달러 기준" }).click();
+  await page.screenshot({ path: path.join(out, `${slug}-portfolio-returns.png`), fullPage: true });
 
   // ── 백테스트 ──
   await go("/backtest");
@@ -242,7 +237,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   // ── 대시보드: 개인 영역 ──
   await go("/");
   t = await waitText(page, "저장한 전략 6개");
-  check(`${P}대시보드: 내 총자산·분배금·전략·최근 결과 수`, t.includes(money(value + cash)) && t.includes("최근 12개월 실제 분배금") && t.includes("저장한 전략 6개") && /최근 계산 결과 [1-9]\d*개/.test(t) && t.includes("가상 계좌 거래 1건"));
+  check(`${P}대시보드: 내 총자산·분배금·전략·최근 결과 수`, t.includes(money(value + cash)) && t.includes("최근 12개월 실제 분배금") && t.includes("저장한 전략 6개") && /최근 계산 결과 [1-9]\d*개/.test(t) && t.includes("총수익률 (달러 기준)"));
 
   // ── 원화 환산 ──
   await go("/settings");
@@ -262,7 +257,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   const plainPath = path.join(out, `${slug}-userdata.json`);
   await (await dl1).saveAs(plainPath);
   const plain = JSON.parse(fs.readFileSync(plainPath, "utf8"));
-  check(`${P}백업: 일반 내보내기 (자산·가상·전략·설정 포함)`, plain.format === "usi-userdata" && plain.data.portfolio.ledger.length >= 8 && plain.data.virtual.trades.length === 1 && plain.data.strategies.length === 6 && Object.keys(plain.browser).some((k) => k === "usi-prefs-v1"));
+  check(`${P}백업: 일반 내보내기 (자산·전략·설정 포함)`, plain.format === "usi-userdata" && plain.data.portfolio.ledger.length >= 8 && plain.data.virtual === undefined && plain.data.strategies.length === 6 && Object.keys(plain.browser).some((k) => k === "usi-prefs-v1"));
   await page.getByLabel("백업 비밀번호", { exact: true }).fill("test-password-1");
   await page.getByLabel("백업 비밀번호 확인").fill("test-password-1");
   const dl2 = page.waitForEvent("download");
@@ -309,7 +304,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   // ── 모바일 가로 넘침 ──
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "ko-KR" });
   const m = await mctx.newPage();
-  for (const u of ["/portfolio", "/paper", "/backtest", "/simulate", "/stress", "/strategies", "/settings"]) {
+  for (const u of ["/portfolio", "/backtest", "/simulate", "/stress", "/strategies", "/settings"]) {
     await m.goto(`${base}${u}`, { waitUntil: "networkidle" });
     await m.waitForTimeout(600);
     const overflow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

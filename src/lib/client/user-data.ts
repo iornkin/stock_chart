@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchIncome, fetchQuotes, fetchSeries, type IncomeResponse } from "./data-api";
 import { useLocal } from "./local-store";
-import { EMPTY_PORTFOLIO, newId, type PortfolioData, type SavedRun, type Strategy, type VirtualAccount } from "@/lib/portfolio/types";
+import { EMPTY_PORTFOLIO, newId, type PortfolioData, type SavedRun, type Strategy } from "@/lib/portfolio/types";
 import type { PriceSeries } from "@/lib/sim/series";
 import type { Quote } from "@/lib/types";
 
@@ -11,9 +11,6 @@ export function usePortfolio() {
   return useLocal<PortfolioData>("portfolio", EMPTY_PORTFOLIO);
 }
 
-export function useVirtual() {
-  return useLocal<VirtualAccount | null>("virtual", null);
-}
 
 export function useStrategies() {
   return useLocal<Strategy[]>("strategies", []);

@@ -68,10 +68,8 @@ export function validateBundle(x: unknown): { ok: true; bundle: UserBundle; summ
       return { ok: false, error: "내 자산 데이터 형식이 올바르지 않습니다." };
     summary.push(`내 자산: ${p.mode === "ledger" ? `거래 ${(p.ledger as unknown[]).length}건` : `보유 종목 ${((p.simple as Record<string, unknown>).holdings as unknown[]).length}개`}`);
   }
-  if (d.virtual !== undefined) {
-    if (!isObj(d.virtual) || !Array.isArray(d.virtual.trades) || typeof d.virtual.initialCash !== "number") return { ok: false, error: "가상 투자 데이터 형식이 올바르지 않습니다." };
-    summary.push(`가상 투자: 거래 ${d.virtual.trades.length}건`);
-  }
+  // 예전 백업의 가상 투자 기록은 기능을 없앴으므로 복원하지 않는다
+  if (d.virtual !== undefined) summary.push("가상 투자 기록: 더 이상 쓰지 않아 건너뜀");
   if (d.strategies !== undefined) {
     if (!Array.isArray(d.strategies) || d.strategies.some((s) => !isObj(s) || typeof s.name !== "string" || !Array.isArray(s.items))) return { ok: false, error: "전략 데이터 형식이 올바르지 않습니다." };
     summary.push(`전략: ${d.strategies.length}개`);
