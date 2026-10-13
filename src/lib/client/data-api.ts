@@ -6,6 +6,8 @@ import { IS_STATIC, staticDataUrl } from "@/lib/static-mode";
 import { compareFromInputs, type CompareInput, type CompareResult } from "@/lib/compare-core";
 import { digestOf, type BriefingDigest } from "@/lib/briefing/digest";
 import type { SymbolBriefing } from "@/lib/briefing/types";
+import { decodeSeries, seriesFileKey, type PriceSeries, type SeriesWire } from "@/lib/sim/series";
+import type { IncomeInfo } from "@/lib/sim/income";
 
 export async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url, IS_STATIC ? { cache: "no-cache" } : undefined);
@@ -65,4 +67,34 @@ export async function fetchCompare(symbols: string[], period: string): Promise<C
 
 export function statusUrl(): string {
   return IS_STATIC ? staticDataUrl("status.json") : "/api/status";
+}
+
+const seriesCache = new Map<string, Promise<PriceSeries>>();
+
+/** 백테스트·시뮬레이션용 일봉 종가 + 분배금 (한 번 받은 종목은 페이지에 머무는 동안 재사용) */
+export function fetchSeries(symbol: string): Promise<PriceSeries> {
+  let p = seriesCache.get(symbol);
+  if (!p) {
+    const url = IS_STATIC ? staticDataUrl(`series/${seriesFileKey(symbol)}.json`) : `/api/series/${encodeURIComponent(symbol)}`;
+    p = getJson<SeriesWire>(url).then(decodeSeries);
+    p.catch(() => seriesCache.delete(symbol));
+    seriesCache.set(symbol, p);
+  }
+  return p;
+}
+
+export interface IncomeResponse {
+  asOf: number;
+  items: Record<string, IncomeInfo>;
+}
+
+let incomeCache: Promise<IncomeResponse> | null = null;
+
+/** 지원 종목별 배당·분배금 요약 */
+export function fetchIncome(): Promise<IncomeResponse> {
+  if (!incomeCache) {
+    incomeCache = getJson<IncomeResponse>(IS_STATIC ? staticDataUrl("income.json") : "/api/income");
+    incomeCache.catch(() => (incomeCache = null));
+  }
+  return incomeCache;
 }

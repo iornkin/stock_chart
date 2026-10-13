@@ -113,6 +113,11 @@ export const INSTRUMENTS: InstrumentConfig[] = [
     benchmarks: ["QQQ", "^NDX"], peers: ["META", "MSFT"], newsQueries: ["Alphabet Google"],
   },
   {
+    symbol: "GOOG", name: "Alphabet Inc. Class C", nameKo: "알파벳 C", kind: "stock", category: "m7",
+    exchange: "NASDAQ", cik: "0001652044", officialUrl: "https://abc.xyz/investor/",
+    benchmarks: ["QQQ", "^NDX"], peers: ["GOOGL", "META"], newsQueries: ["Alphabet Google"],
+  },
+  {
     symbol: "META", name: "Meta Platforms, Inc.", nameKo: "메타 플랫폼스", kind: "stock", category: "m7", core: true,
     exchange: "NASDAQ", cik: "0001326801", officialUrl: "https://investor.atmeta.com/",
     benchmarks: ["QQQ", "^NDX"], peers: ["GOOGL", "AMZN"], newsQueries: ["Meta Platforms"],
@@ -424,7 +429,7 @@ export interface MarketSymbolConfig {
   nameKo: string;
   group: "index" | "rates" | "fx" | "commodity" | "volatility";
   /** 표시 단위 */
-  unit?: "pt" | "%" | "usd";
+  unit?: "pt" | "%" | "usd" | "krw";
   /** 대시보드 상단 지수 카드에 표시 */
   headline?: boolean;
   note?: string;
@@ -441,6 +446,7 @@ export const MARKET_SYMBOLS: MarketSymbolConfig[] = [
   { symbol: "^TNX", nameKo: "미국 10년물 국채금리", group: "rates", unit: "%", note: "CBOE 10년 금리 지수(수익률 %)" },
   { symbol: "^IRX", nameKo: "미국 13주 국채금리", group: "rates", unit: "%", note: "CBOE 13주 금리 지수(할인율 %)" },
   { symbol: "DX-Y.NYB", nameKo: "달러 인덱스 (DXY)", group: "fx", unit: "pt", note: "ICE 미국 달러 지수" },
+  { symbol: "KRW=X", nameKo: "원/달러 환율", group: "fx", unit: "krw", note: "1달러당 원화 (Yahoo Finance 외환 시세)" },
   { symbol: "GC=F", nameKo: "금 선물 (COMEX 근월물)", group: "commodity", unit: "usd", note: "현물 가격이 아닌 선물 가격입니다" },
 ];
 

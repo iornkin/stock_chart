@@ -46,3 +46,44 @@ export async function fetchCompanyFacts(cik: string): Promise<CompanyFacts> {
     timeoutMs: 60000,
   });
 }
+
+export interface SecFiling {
+  form: string;
+  filingDate: string;
+  reportDate: string | null;
+  description: string | null;
+  url: string;
+}
+
+interface Submissions {
+  cik?: string | number;
+  filings?: { recent?: { form?: string[]; filingDate?: string[]; reportDate?: string[]; accessionNumber?: string[]; primaryDocument?: string[]; primaryDocDescription?: string[] } };
+}
+
+/** 최근 주요 공시 목록 (10-K·10-Q·8-K·주주총회 위임장) — SEC EDGAR submissions */
+export async function fetchRecentFilings(cik: string, limit = 20): Promise<SecFiling[]> {
+  if (!secEnabled()) throw new ProviderError(P, "SEC_USER_AGENT 미설정");
+  if (!validUserAgent(env.secUserAgent)) throw new ProviderError(P, "SEC_USER_AGENT 형식 오류");
+  const digits = cik.replace(/\D/g, "");
+  const j = await requestJson<Submissions>(P, `${env.secBase}/submissions/CIK${digits.padStart(10, "0")}.json`, {
+    headers: { "User-Agent": env.secUserAgent, "Accept-Encoding": "gzip, deflate" },
+    timeoutMs: 30000,
+  });
+  const r = j.filings?.recent;
+  if (!r?.form) throw new ProviderError(P, "공시 목록 형식이 예상과 다릅니다");
+  const keep = new Set(["10-K", "10-Q", "8-K", "DEF 14A", "10-K/A", "10-Q/A", "8-K/A"]);
+  const out: SecFiling[] = [];
+  for (let i = 0; i < r.form.length && out.length < limit; i++) {
+    if (!keep.has(r.form[i])) continue;
+    const acc = (r.accessionNumber?.[i] ?? "").replace(/-/g, "");
+    const doc = r.primaryDocument?.[i] ?? "";
+    out.push({
+      form: r.form[i],
+      filingDate: r.filingDate?.[i] ?? "",
+      reportDate: r.reportDate?.[i] || null,
+      description: r.primaryDocDescription?.[i] || null,
+      url: acc && doc ? `https://www.sec.gov/Archives/edgar/data/${Number(digits)}/${acc}/${doc}` : `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${digits}`,
+    });
+  }
+  return out;
+}

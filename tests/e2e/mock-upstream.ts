@@ -52,6 +52,7 @@ const baseSpec: Record<string, { start: number; mu: number; sigma: number }> = {
   "^TNX": { start: 2.2, mu: 0.0001, sigma: 0.02 },
   "^IRX": { start: 0.3, mu: 0.0005, sigma: 0.03 },
   "DX-Y.NYB": { start: 98, mu: 0, sigma: 0.004 },
+  "KRW=X": { start: 1180, mu: 0.00005, sigma: 0.005 },
 };
 const baseRet: Record<string, number[]> = {};
 for (const [s, sp] of Object.entries(baseSpec)) {
@@ -90,6 +91,8 @@ interface DBar {
   v: number;
 }
 const cacheDaily = new Map<string, DBar[]>();
+/** 실제처럼 상장일이 늦은 종목 (백테스트의 상장일 검증용) */
+const LISTING: Record<string, string> = { JEPI: "2020-05-21", JEPQ: "2022-05-04" };
 function dailyBars(symbol: string): DBar[] {
   const hit = cacheDaily.get(symbol);
   if (hit) return hit;
@@ -99,6 +102,7 @@ function dailyBars(symbol: string): DBar[] {
   const out: DBar[] = [];
   const vol0 = 1e6 + (hash(symbol) % 50) * 1e6;
   days.forEach((d, i) => {
+    if (LISTING[symbol] && d < LISTING[symbol]) return;
     const o = px * (1 + 0.002 * gauss(r));
     const c = Math.max(0.5, px * Math.exp(sp.rets[i]));
     const h = Math.max(o, c) * (1 + Math.abs(0.004 * gauss(r)));
@@ -439,6 +443,16 @@ const server = http.createServer((req, res) => {
     // SEC
     const sec = p.match(/^\/sec\/api\/xbrl\/companyfacts\/CIK(\d+)\.json$/);
     if (sec) return req.headers["user-agent"] ? send(res, 200, secFacts(sec[1])) : send(res, 403, "UA required");
+    const subm = p.match(/^\/sec\/submissions\/CIK(\d+)\.json$/);
+    if (subm) {
+      const f = [
+        ["10-Q", addDays(LAST, -20), addDays(LAST, -45), "0000000000-26-000003", "q3-test.htm", "[TEST] Quarterly report"],
+        ["8-K", addDays(LAST, -30), addDays(LAST, -30), "0000000000-26-000002", "8k-test.htm", "[TEST] Current report"],
+        ["4", addDays(LAST, -31), "", "0000000000-26-000009", "form4.xml", ""],
+        ["10-K", addDays(LAST, -200), addDays(LAST, -230), "0000000000-26-000001", "10k-test.htm", "[TEST] Annual report"],
+      ];
+      return send(res, 200, { cik: subm[1], filings: { recent: { form: f.map((x) => x[0]), filingDate: f.map((x) => x[1]), reportDate: f.map((x) => x[2]), accessionNumber: f.map((x) => x[3]), primaryDocument: f.map((x) => x[4]), primaryDocDescription: f.map((x) => x[5]) } } });
+    }
     return send(res, 404, { error: "mock: unknown path", path: p });
   } catch (e) {
     return send(res, 500, { error: String(e) });

@@ -95,6 +95,15 @@ export async function refreshProfile(symbol: string, opts: { maxAgeMs?: number; 
     }
   }
 
+  if (!isEtf && inst?.cik && (opts.includeSec ?? true) && sec.secEnabled() && !fresh("sec_filings")) {
+    try {
+      writeSnapshot("sec_filings", symbol, await sec.fetchRecentFilings(inst.cik), "SEC EDGAR");
+      out.done.push("sec_filings");
+    } catch (e) {
+      out.errors.push((e as Error).message);
+    }
+  }
+
   // Alpha Vantage 는 하루 호출 수가 적으므로 Yahoo ETF 정보가 없을 때 우선, 그 외에는 7일 주기로 갱신
   if (isEtf && av.alphaVantageEnabled()) {
     const ysum = readSnapshot<Record<string, unknown>>("yahoo_summary", symbol);
@@ -378,4 +387,10 @@ export function etfProfile(symbol: string): EtfProfileView {
 export function topHoldings(symbol: string, minWeight = 3): { symbol: string; name: string; weight: number }[] {
   const v = etfProfile(symbol);
   return v.holdings.filter((h) => h.symbol && h.weight >= minWeight).map((h) => ({ symbol: (h.symbol as string).toUpperCase(), name: h.name, weight: h.weight }));
+}
+
+/** 저장된 최근 SEC 공시 목록 (개별 기업만) */
+export function readFilings(symbol: string): { items: sec.SecFiling[]; fetchedAt: number } | null {
+  const s = readSnapshot<sec.SecFiling[]>("sec_filings", symbol);
+  return s ? { items: s.data, fetchedAt: s.fetchedAt } : null;
 }

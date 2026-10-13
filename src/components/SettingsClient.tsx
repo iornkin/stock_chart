@@ -102,6 +102,18 @@ export default function SettingsClient() {
           </div>
         </div>
         <div>
+          <p className="mb-1 text-sm text-ink-2">통화</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={btn(!prefs.showKrw)} onClick={() => setPrefs({ showKrw: false })} aria-pressed={!prefs.showKrw}>
+              USD만
+            </button>
+            <button type="button" className={btn(prefs.showKrw)} onClick={() => setPrefs({ showKrw: true })} aria-pressed={prefs.showKrw}>
+              USD + 원화 환산 함께
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-muted">기본 통화는 USD입니다. 원화 환산은 최근 원/달러 환율(시세 기준 시각 표시)을 쓰며, 내 자산에서는 거래 당시 환율과 현재 환율을 나눠 계산합니다.</p>
+        </div>
+        <div>
           <p className="mb-1 text-sm text-ink-2">화면 자동 새로고침 (장 운영 시간에만)</p>
           <div className="flex flex-wrap gap-2">
             {[0, 60, 300, 900].map((s) => (
