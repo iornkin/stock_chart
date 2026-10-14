@@ -12,6 +12,8 @@ import type { CostMethod } from "@/lib/portfolio/tax";
 import BarChartSvg from "@/components/BarChartSvg";
 import PanelTabs from "@/components/PanelTabs";
 import type { PriceSeries } from "@/lib/sim/series";
+import { configFingerprint, dataFingerprint } from "@/lib/sim/repro";
+import { parseSettings, SETTINGS_FORMAT, type BacktestSettings } from "@/lib/sim/backtest-settings";
 
 const QUICK: { label: string; months?: number; all?: boolean }[] = [
   { label: "1개월", months: 1 },
@@ -38,6 +40,8 @@ interface RunOutput {
   bench: { symbol: string; suite: ReturnType<typeof runBacktestSuite> } | null;
   series: Record<string, PriceSeries>;
   normalizedNote: string[];
+  /** 설정 내보내기용 화면 입력값 */
+  settings: BacktestSettings;
 }
 
 export default function BacktestClient() {
@@ -140,7 +144,62 @@ export default function BacktestClient() {
     }
     const b = bench ? { symbol: bench, suite: runBacktestSuite({ ...base, holdings: [{ symbol: bench, weight: 100 }], rebalance: "none" }, ser.series) } : null;
     if (b && !b.suite.main.ok) notes.push(`벤치마크 ${bench}: ${b.suite.main.problems.join(" ")}`);
-    setOut({ at: Date.now(), cfg: base, items, bench: b, series: ser.series, normalizedNote: notes });
+    const settings: BacktestSettings = {
+      format: SETTINGS_FORMAT,
+      version: 1,
+      portfolios: ready.map(({ p }) => ({ name: p.name, items: rowsToItems(p.rows) })),
+      start,
+      end,
+      initial: ini,
+      monthly: mon,
+      timing,
+      reinvest,
+      rebalance,
+      costPct: c,
+      taxPct: t,
+      rfMode,
+      riskFreePct: rfMode === "manual" ? rfPct : parseNum(rf) || 0,
+      benchmark: bench || null,
+      normalize,
+      capitalGains: cgOn ? { method: cgMethod, fxMode, fixedFx: fxMode === "fixed" ? fixed : null } : null,
+    };
+    setOut({ at: Date.now(), cfg: base, items, bench: b, series: ser.series, normalizedNote: notes, settings });
+  };
+
+  const [loadMsg, setLoadMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const loadSettings = async (file: File) => {
+    try {
+      const r = parseSettings(JSON.parse(await file.text()));
+      if (!r.ok) return setLoadMsg({ ok: false, text: r.error });
+      const x = r.settings;
+      setList(x.portfolios.map((p, i) => ({ key: LETTERS[i], name: p.name, rows: rowsFrom(p.items) })));
+      setStart(x.start);
+      setEnd(x.end);
+      setInitial(String(x.initial));
+      setMonthly(String(x.monthly));
+      setTiming(x.timing);
+      setReinvest(x.reinvest);
+      setRebalance(x.rebalance);
+      setCost(String(x.costPct));
+      setTax(String(x.taxPct));
+      setRfMode(x.rfMode);
+      setRf(String(x.riskFreePct));
+      setBench(x.benchmark ?? "");
+      setNormalize(x.normalize);
+      setCgOn(!!x.capitalGains);
+      if (x.capitalGains) {
+        setCgMethod(x.capitalGains.method);
+        setFxMode(x.capitalGains.fxMode);
+        if (x.capitalGains.fixedFx) setFixedFx(String(x.capitalGains.fixedFx));
+      }
+      setOut(null);
+      setLoadMsg({
+        ok: true,
+        text: `설정을 불러왔습니다. '백테스트 실행'을 누르면 같은 조건으로 다시 계산합니다.${x.check ? ` 내보낼 때 재현 코드: 데이터 ${x.check.dataCode} — 다시 계산한 결과의 데이터 코드가 같으면 같은 가격 기록으로 계산한 것입니다.` : ""}`,
+      });
+    } catch {
+      setLoadMsg({ ok: false, text: "JSON 파일을 읽지 못했습니다." });
+    }
   };
 
   const save = () => {
@@ -162,6 +221,27 @@ export default function BacktestClient() {
     <div className="flex flex-col gap-5">
       <Section title="1. 포트폴리오" description="최대 4개를 같은 기간·조건으로 비교합니다">
         <PortfolioInputs list={list} onChange={setList} />
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <label className="btn btn-sm cursor-pointer">
+            설정 파일 불러오기
+            <input
+              type="file"
+              accept="application/json,.json"
+              className="sr-only"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void loadSettings(f);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <span className="text-muted">결과 화면의 &lsquo;검증·재현&rsquo;에서 내보낸 설정 파일로 같은 조건을 다시 채웁니다.</span>
+          {loadMsg && (
+            <span role="status" className={loadMsg.ok ? "text-good" : "text-critical"}>
+              {loadMsg.text}
+            </span>
+          )}
+        </div>
         <label className="mt-3 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={normalize} onChange={(e) => setNormalize(e.target.checked)} className="h-4 w-4" />
           비중 합계가 100%가 아니면 자동 정규화 (끄면 오류로 알림)
@@ -344,9 +424,6 @@ function Results({ out, showKrw }: { out: RunOutput; showKrw: boolean }) {
     return dates.map((d) => m.get(d) ?? null);
   };
   const years = [...new Set(all.flatMap((r) => r.annual.map((a) => a.year)))].sort();
-  const lastData = Object.values(out.series)
-    .filter((x) => all.some((r) => r.holdings.some((h) => h.symbol === x.symbol)))
-    .map((x) => ({ s: x.symbol, last: x.dates[x.dates.length - 1], src: x.source, at: x.fetchedAt }));
   const flipped = (i: number) => (i < out.items.length ? out.items[i].suite.flipped : out.bench?.suite.flipped) ?? null;
   const priceOnly = (i: number) => (i < out.items.length ? out.items[i].suite.priceOnly : out.bench?.suite.priceOnly) ?? null;
   const comps = benchMain ? mains.map((r) => compareWithBenchmark(r, benchMain)) : [];
@@ -572,27 +649,8 @@ function Results({ out, showKrw }: { out: RunOutput; showKrw: boolean }) {
     ...(showKrw ? [{ key: "krw", label: "원화 환산", content: <KrwResults all={all} names={names} fx={out.series["KRW=X"]} /> }] : []),
     {
       key: "basis",
-      label: "가정·출처",
-      content: (
-        <ul className="list-disc pl-5 text-xs leading-relaxed text-ink-2">
-          {[...out.normalizedNote, ...r0.notes].map((n) => (
-            <li key={n}>{n}</li>
-          ))}
-          <li>가격: 일별 종가(주식분할만 반영). 분배금은 배당락일에 보유 수량 × 주당 지급액으로 한 번만 더합니다 — 수정주가를 쓰지 않아 이중 계산이 없습니다.</li>
-          <li>분배금 재투자: 배당락일 종가로 같은 종목 매수. 현금 보유: 세후 분배금을 이자 없는 현금으로 보유.</li>
-          <li>
-            추가 납입: {out.cfg.timing === "month_start" ? "매월 첫 거래일" : "매월 마지막 거래일"} 종가로 목표 비중대로 매수 ({usd(out.cfg.monthly)}). 리밸런싱: {REBALANCE_KO[out.cfg.rebalance as Rebalance]} (새 기간 첫 거래일 종가).
-          </li>
-          <li>거래 비용 {out.cfg.costPct}% (매수·리밸런싱 거래 금액), 분배금 세금 {out.cfg.taxPct}%. 환전 비용은 반영하지 않았습니다 (운용보수는 이미 가격에 반영됨).</li>
-          <li>상장 이전 기간은 계산하지 않으며, 가격이 없는 날을 채우지 않습니다.</li>
-          {lastData.map((d) => (
-            <li key={d.s}>
-              {d.s}: 출처 {d.src ?? "-"}, 마지막 데이터 {d.last}, 수집 {d.at ? formatEt(d.at) : "-"}
-            </li>
-          ))}
-          <li>계산 시각: {new Date(out.at).toLocaleString("ko-KR")}</li>
-        </ul>
-      ),
+      label: "검증·재현",
+      content: <VerifyPanel out={out} all={all} names={names} />,
     },
   ];
 
@@ -757,3 +815,143 @@ function KrwResults({ all, names, fx }: { all: BacktestResult[]; names: string[]
   );
 }
 
+
+/** 결과 검증: 요청·실제 기간, 종목별 데이터 범위·출처, 뺀 날, 분배금·비용·세금·리밸런싱 조건, 재현 코드, 설정 내보내기 */
+function VerifyPanel({ out, all, names }: { out: RunOutput; all: BacktestResult[]; names: string[] }) {
+  const r0 = all[0];
+  const v = r0.verification;
+  const symbols = [...new Set(all.flatMap((r) => r.holdings.map((h) => h.symbol)))];
+  const dataCode = dataFingerprint(symbols, out.series, v.used.start, v.used.end);
+  const codes = all.map((r) => configFingerprint(r.config));
+  const exportSettings = () => {
+    const file: BacktestSettings = {
+      ...out.settings,
+      check: { configCodes: codes, dataCode, summary: all.map((r, i) => ({ name: names[i], finalValue: r.finalValue, twrReturnPct: r.twrReturnPct })), exportedAt: new Date().toISOString() },
+    };
+    const blob = new Blob([JSON.stringify(file, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `backtest-settings-${v.used.start}_${v.used.end}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  const cfg = out.cfg;
+  return (
+    <div className="flex flex-col gap-4 text-sm">
+      <div className="overflow-x-auto">
+        <table className="table-basic">
+          <tbody>
+            <tr>
+              <th className="text-left font-normal text-ink-2">요청한 기간</th>
+              <td className="num">
+                {v.requested.start} ~ {v.requested.end}
+              </td>
+            </tr>
+            <tr>
+              <th className="text-left font-normal text-ink-2">실제 계산 기간</th>
+              <td className="num">
+                {v.used.start} ~ {v.used.end} · {r0.tradingDays}거래일
+                {(v.used.start !== v.requested.start || v.used.end !== v.requested.end) && <span className="ml-1 text-xs text-warn">(요청과 다름 — 아래 이유 참고)</span>}
+              </td>
+            </tr>
+            <tr>
+              <th className="text-left font-normal text-ink-2">모든 종목 공통 데이터 기간</th>
+              <td className="num">{v.commonStart && v.commonEnd ? `${v.commonStart} ~ ${v.commonEnd}` : "-"}</td>
+            </tr>
+            <tr>
+              <th className="text-left font-normal text-ink-2">가격이 없어 뺀 거래일</th>
+              <td>
+                {v.skippedDays ? `${v.skippedDays}일 (예: ${v.skippedSample.join(", ")}${v.skippedDays > v.skippedSample.length ? " …" : ""}) — 빈 가격을 채우지 않음` : "없음"}
+              </td>
+            </tr>
+            <tr>
+              <th className="text-left font-normal text-ink-2">분배금</th>
+              <td>
+                {cfg.reinvest ? "포함 · 배당락일 종가로 같은 종목 재투자" : "포함 · 세후 금액을 이자 없는 현금으로 보유"} · 실제 반영 {v.divEvents}건 · 세율 {cfg.taxPct}%
+              </td>
+            </tr>
+            <tr>
+              <th className="text-left font-normal text-ink-2">납입·리밸런싱·비용</th>
+              <td>
+                초기 {usd(cfg.initial)} · 매월 {usd(cfg.monthly)} ({cfg.timing === "month_start" ? "첫 거래일" : "마지막 거래일"}, {r0.contributions}회) · 리밸런싱 {REBALANCE_KO[cfg.rebalance as Rebalance]} ({v.rebalances}회) · 거래 비용 {cfg.costPct}% (합계 {usd(r0.costs)})
+              </td>
+            </tr>
+            <tr>
+              <th className="text-left font-normal text-ink-2">양도소득세</th>
+              <td>{cfg.capitalGains ? "반영 (양도세 탭의 가정 참고)" : "반영 안 함"}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div>
+        <p className="mb-1 text-xs font-semibold text-ink-2">종목별 데이터</p>
+        <div className="overflow-x-auto">
+          <table className="table-basic">
+            <thead>
+              <tr>
+                <th>종목</th>
+                <th>데이터 시작 (상장일·기록 시작)</th>
+                <th>마지막 데이터</th>
+                <th className="r">기간 중 분배금 반영</th>
+                <th>출처 · 수집</th>
+              </tr>
+            </thead>
+            <tbody>
+              {symbols.map((sym) => {
+                const c = all.map((r) => r.verification.coverage.find((x) => x.symbol === sym)).find(Boolean);
+                if (!c) return null;
+                return (
+                  <tr key={sym}>
+                    <td className="font-semibold">{sym}</td>
+                    <td className="num">{c.first ?? "-"}</td>
+                    <td className="num">{c.last ?? "-"}</td>
+                    <td className="r">{c.divEvents}건</td>
+                    <td className="text-xs">
+                      {c.source ?? "-"} · {c.fetchedAt ? formatEt(c.fetchedAt) : "-"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-1 text-xs font-semibold text-ink-2">계산 방식과 조정 내용</p>
+        <ul className="list-disc pl-5 text-xs leading-relaxed text-ink-2">
+          {[...out.normalizedNote, ...r0.notes].map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+          <li>가격: 일별 종가(주식분할만 반영). 분배금은 배당락일에 보유 수량 × 주당 지급액으로 한 번만 더합니다 — 수정주가를 쓰지 않아 이중 계산이 없습니다.</li>
+          <li>모든 종목에 종가가 있는 날만 계산합니다. 상장 이전 기간은 계산하지 않으며, 가격이 없는 날을 채우지 않습니다.</li>
+          <li>추가 납입금은 수익이 아니라 원금입니다. 수익률(TWR)은 납입 영향을 빼고 계산하고, 금액가중 수익률(IRR)은 납입 시점을 반영합니다.</li>
+        </ul>
+      </div>
+
+      <div>
+        <p className="mb-1 text-xs font-semibold text-ink-2">한계 (실제 투자 결과와 다를 수 있는 이유)</p>
+        <ul className="list-disc pl-5 text-xs leading-relaxed text-ink-2">
+          <li>실제 체결 가격(호가 차이·시간), 환전 비용·환율, 증권사별 수수료, 분배금 실제 입금일과 재투자 가능 시점이 반영되지 않습니다.</li>
+          <li>분배금 세금은 입력한 단일 세율로만 뺍니다. 분배금 성격(자본 반환 등)별 세금 차이와 한국 종합과세는 반영하지 않습니다.</li>
+          <li>운용보수는 이미 가격에 반영되어 있습니다. 상장 폐지·합병 종목은 데이터에 없어 생존 편향이 있을 수 있습니다.</li>
+          <li>제공처 기록의 오류·누락이 그대로 결과에 들어갑니다. 과거 결과는 앞으로의 수익을 뜻하지 않습니다.</li>
+        </ul>
+      </div>
+
+      <div className="rounded-lg border border-line bg-surface-2 p-3">
+        <p className="text-xs font-semibold text-ink-2">재현 확인</p>
+        <p className="mt-1 text-xs text-ink-2">
+          데이터 코드 <span className="num font-semibold">{dataCode}</span> · 설정 코드 {codes.map((c, i) => `${names[i].split(".")[0]} ${c}`).join(" · ")}
+        </p>
+        <p className="mt-1 text-[11px] text-muted">같은 설정과 같은 가격·분배금 기록(데이터 코드가 같음)으로 다시 계산하면 같은 결과가 나옵니다. 데이터가 새로 수집되거나 정정되면 데이터 코드와 결과가 달라질 수 있습니다.</p>
+        <button type="button" className="btn btn-sm mt-2" onClick={exportSettings}>
+          설정 내보내기 (JSON)
+        </button>
+        <span className="ml-2 text-[11px] text-muted">파일에는 포트폴리오 비중·계산 조건·재현 코드만 들어갑니다. 위 &lsquo;설정 파일 불러오기&rsquo;로 다시 채울 수 있습니다.</span>
+        <p className="mt-2 text-[11px] text-muted">계산 시각: {new Date(out.at).toLocaleString("ko-KR")}</p>
+      </div>
+    </div>
+  );
+}

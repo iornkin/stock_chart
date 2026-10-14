@@ -292,6 +292,7 @@ export interface EtfProfileView {
   holdings: { symbol: string | null; name: string; weight: number }[];
   holdingsSource: string | null;
   sectors: { sector: string; weight: number }[];
+  sectorsSource: string | null;
   top10Weight: number | null;
   trailingReturns: { label: string; value: number | null }[];
   annualReturns: { year: number; value: number | null }[];
@@ -312,6 +313,12 @@ const SECTOR_KO: Record<string, string> = {
   energy: "에너지",
   healthcare: "헬스케어",
 };
+
+/** Yahoo 섹터 이름(예: "Consumer Cyclical", "technology")을 화면 표기로 */
+export function sectorKo(raw: string): string {
+  const k = raw.trim().toLowerCase().replace(/\s+/g, "_").replace("real_estate", "realestate");
+  return SECTOR_KO[k] ?? raw;
+}
 
 export function etfProfile(symbol: string): EtfProfileView {
   const ys = readSnapshot<Obj>("yahoo_summary", symbol);
@@ -372,6 +379,7 @@ export function etfProfile(symbol: string): EtfProfileView {
     holdings,
     holdingsSource,
     sectors,
+    sectorsSource: ySectors.length ? Y : sectors.length ? A : null,
     top10Weight: top10,
     trailingReturns,
     annualReturns: annual,

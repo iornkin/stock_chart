@@ -136,6 +136,32 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await page.getByRole("button", { name: "달러 기준" }).click();
   await page.screenshot({ path: path.join(out, `${slug}-portfolio-returns.png`), fullPage: true });
 
+  // ── 성과 분석·목표 비중·노출 분석·세후 분배금 ──
+  await tabs.getByRole("tab", { name: "성과 분석" }).click();
+  t = await waitText(page, /시간가중수익률 \(TWR\)|수익률을 계산할 수 없습니다/);
+  check(`${P}성과 분석: TWR·XIRR 따로 표시 또는 계산 불가 사유`, (t.includes("시간가중수익률 (TWR)") && t.includes("금액가중수익률 (XIRR") && t.includes("검증 통과")) || t.includes("수익률을 계산할 수 없습니다"), t.slice(t.indexOf("성과 분석"), t.indexOf("성과 분석") + 200));
+  check(`${P}성과 분석: NaN·undefined 없음`, !/NaN|undefined/.test(t));
+  await tabs.getByRole("tab", { name: "목표 비중" }).click();
+  await waitText(page, "현재 비중으로 채우기");
+  await page.getByRole("button", { name: "현재 비중으로 채우기" }).click();
+  await page.getByRole("button", { name: "목표 저장" }).click();
+  t = await waitText(page, "거래 비용 반영 전후");
+  check(`${P}목표 비중: 현재 비중 저장 → 매수·매도 계산·비용 전후 비교`, t.includes("매수(+) / 매도(−)") && t.includes("거래 비용 반영 전후") && t.includes("계산에 쓴 시세"));
+  await page.getByRole("button", { name: "추가 투자금만" }).click();
+  await page.getByLabel("새로 넣을 금액 (달러)").fill("1000");
+  t = await waitText(page, "현금 행의 현재 비중은 새로 넣을 금액을 더한 뒤 기준");
+  check(`${P}목표 비중: 추가 투자금만 (매도 없음)`, t.includes("새로 넣을 금액을 더한 뒤") && !t.includes("NaN"));
+  await tabs.getByRole("tab", { name: "노출 분석" }).click();
+  t = await waitText(page, /종목까지 확인한 비율|편입 종목 자료를 불러오지 못했습니다/);
+  check(`${P}노출 분석: 확인 비율·섹터·유형 (상위 편입 기준)`, t.includes("종목까지 확인한 비율") && t.includes("유형별 비중") && t.includes("상위 편입"));
+  await tabs.getByRole("tab", { name: "분배금" }).click();
+  t = await waitText(page, "세후 분배금 (세율 가정별)");
+  check(`${P}분배금: 세율 가정별 세후 비교·재투자 가정`, t.includes("15% (한·미 조세조약)") && t.includes("30% (조약 미적용)") && t.includes("세후 재투자 가정"));
+  await page.getByRole("group", { name: "분배금 세율 가정" }).getByRole("button", { name: "직접 입력" }).click();
+  await page.getByLabel("직접 입력 세율").fill("22");
+  t = await waitText(page, "직접 입력 22%");
+  check(`${P}분배금: 직접 입력한 세율로 계산`, t.includes("직접 입력 22%"));
+
   // ── 백테스트 ──
   await go("/backtest");
   await waitText(page, "종목별 실제 데이터 범위");
@@ -152,6 +178,9 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   t = await waitText(page, "월별 수익률 히트맵");
   check(`${P}백테스트: 차트·히트맵·연도별 (탭)`, btCanvas >= 2 && t.includes("월별 수익률 히트맵") && (await page.getByRole("img", { name: "연도별 수익률 비교" }).count()) === 1, `canvas ${btCanvas}`);
   check(`${P}백테스트: 과거 성과 미보장 안내`, t.includes("과거 성과는 미래 수익을 보장하지 않습니다"));
+  await btTabs.getByRole("tab", { name: "검증·재현" }).click();
+  t = await waitText(page, "요청한 기간");
+  check(`${P}백테스트: 검증·재현 (요청·실제 기간, 종목별 데이터, 재현 코드)`, t.includes("실제 계산 기간") && t.includes("종목별 데이터") && /데이터 코드 [0-9a-f]{8}/.test(t) && t.includes("한계"));
   await page.getByRole("button", { name: "결과 저장 (대시보드에 표시)" }).click();
   await page.screenshot({ path: path.join(out, `${slug}-backtest.png`), fullPage: true });
   // 사용자가 입력한 날짜 그대로
@@ -301,10 +330,21 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   t = await waitText(page, "(복사본)");
   check(`${P}복원: 전략도 복원`, t.includes("(복사본)"));
 
+  // ── 알림 (이 브라우저에서만) ──
+  await go("/alerts");
+  await waitText(page, "규칙 추가");
+  await page.getByLabel("알림 종류").selectOption("price");
+  await page.getByLabel("알림 종목").fill("QQQ");
+  await page.getByLabel("가격 (달러)").fill("1");
+  await page.getByRole("button", { name: "추가", exact: true }).click();
+  t = await waitText(page, "QQQ 가격 이상 도달");
+  check(`${P}알림: 규칙 추가 → 사이트 안에서 확인·기록`, t.includes("QQQ 가격 이상 도달") && t.includes("지원하지 않습니다"));
+  check(`${P}알림: 머리글 읽지 않은 알림 수`, ((await page.locator('header a[href*="/alerts"]').first().getAttribute("aria-label")) ?? "").includes("1개 읽지 않음"));
+
   // ── 모바일 가로 넘침 ──
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "ko-KR" });
   const m = await mctx.newPage();
-  for (const u of ["/portfolio", "/backtest", "/simulate", "/stress", "/strategies", "/settings"]) {
+  for (const u of ["/portfolio", "/backtest", "/simulate", "/stress", "/strategies", "/settings", "/alerts"]) {
     await m.goto(`${base}${u}`, { waitUntil: "networkidle" });
     await m.waitForTimeout(600);
     const overflow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

@@ -11,6 +11,8 @@ import SnapshotBanner from "@/components/SnapshotBanner";
 import HashOpener from "@/components/HashOpener";
 import SectionTabs from "@/components/SectionTabs";
 import PwaRegister from "@/components/PwaRegister";
+import AlertRunner from "@/components/AlertRunner";
+import AlertBell from "@/components/AlertBell";
 import { BASE_PATH, IS_STATIC } from "@/lib/static-mode";
 
 export const metadata: Metadata = {
@@ -47,6 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <PrefsApplier />
         <HashOpener />
         <PwaRegister />
+        <AlertRunner />
         <div className="flex min-h-screen">
           <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col gap-4 overflow-y-auto border-r border-line bg-surface px-3 py-4 lg:flex">
             <Link href="/" className="px-3 text-base font-bold tracking-tight">
@@ -67,6 +70,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div className="ml-auto flex min-w-0 items-center gap-2">
                 {IS_STATIC && <SnapshotBanner builtAt={Date.now()} />}
                 <MarketClock />
+                <AlertBell />
               </div>
             </header>
             <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 pb-24 pt-5 lg:px-8 lg:pb-10">

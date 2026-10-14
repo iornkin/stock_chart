@@ -58,6 +58,17 @@ export interface PortfolioData {
   convertedAt?: number | null;
   /** 간편 입력 모드의 하루 한 번 평가금액 기록 (이 사이트를 연 날만) */
   snapshots?: { date: string; totalAssets: number; cost: number }[];
+  /** 목표 비중 (리밸런싱 도우미) — 합이 100% 보다 작으면 나머지는 현금 목표 */
+  targets?: PortfolioTargets;
+  updatedAt: number;
+}
+
+export interface PortfolioTargets {
+  items: { symbol: string; weight: number }[];
+  /** 목표에서 이만큼(%p) 넘게 벗어나면 알림 */
+  driftPct: number;
+  /** 사용자가 넣은 거래 수수료율 가정 (%) */
+  feePct: number;
   updatedAt: number;
 }
 

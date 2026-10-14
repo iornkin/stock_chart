@@ -16,6 +16,10 @@ import { categoryOf, Field, KV, LocalOnlyNote, parseNum, pct, Seg, signedKrw, si
 import { SimLineChart, WeightBars } from "@/components/sim/charts";
 import PanelTabs from "@/components/PanelTabs";
 import TaxSection from "./TaxSection";
+import { AfterTaxPanel } from "@/components/DividendTax";
+import PerformanceSection from "./PerformanceSection";
+import RebalanceSection from "./RebalanceSection";
+import ExposureSection from "./ExposureSection";
 import { fetchSeries } from "@/lib/client/data-api";
 
 export type Basis = "usd" | "krw";
@@ -66,6 +70,9 @@ export default function PortfolioClient() {
 
   const tabs = [
     { key: "holdings", label: "보유 종목", content: <HoldingsSection s={s} v={view} /> },
+    { key: "performance", label: "성과 분석", content: <PerformanceSection p={p} /> },
+    { key: "targets", label: "목표 비중", content: <RebalanceSection p={p} s={s} save={save} /> },
+    { key: "exposure", label: "노출 분석", content: <ExposureSection s={s} /> },
     { key: "income", label: "분배금", content: <DividendSection s={s} /> },
     { key: "tax", label: "세금", content: <TaxSection p={p} s={s} /> },
     { key: "history", label: "자산 추이", content: <HistorySection p={p} s={s} /> },
@@ -347,9 +354,34 @@ function DividendSection({ s }: { s: PortfolioSummary }) {
           </div>
         </details>
       )}
+      {s.expectedAnnual > 0 && (
+        <div className="mt-5 border-t border-line pt-4">
+          <p className="mb-2 text-sm font-semibold">세후 분배금 (세율 가정별)</p>
+          <AfterTaxPanel
+            annualGross={s.expectedAnnual}
+            value={!s.missingPrices.length && s.marketValue > 0 ? s.marketValue : null}
+            basisNote="세전 금액 = 현재 보유 수량 × 최근 12개월 실제 주당 정기 지급액 (예상 연간 분배금과 같은 기준, 확정 아님)."
+            perYear={divPerYear(s)}
+          />
+        </div>
+      )}
       <p className="mt-3 text-[11px] leading-relaxed text-muted">금액 = 현재 보유 수량 × 발표된 주당 지급액. 배당락일 전날 보유 수량이 달랐다면 실제 금액과 다릅니다. 분배금은 바뀔 수 있으며, 분배금 수익률이 높다고 총수익률이 높은 것은 아닙니다(분배만큼 가격이 내려가고 원금이 돌려받아지는 경우도 있음).</p>
     </Section>
   );
+}
+
+/** 보유 종목의 연 지급 횟수 (평가금액 가중 평균, 기록 없으면 4회) */
+function divPerYear(s: PortfolioSummary): number {
+  let w = 0;
+  let n = 0;
+  for (const h of s.holdings) {
+    const py = s.income?.[h.symbol]?.perYear;
+    if (py && h.value) {
+      w += h.value;
+      n += py * h.value;
+    }
+  }
+  return w > 0 ? Math.max(1, Math.round(n / w)) : 4;
 }
 
 function ScheduleTable({ items }: { items: PortfolioSummary["thisMonth"] }) {

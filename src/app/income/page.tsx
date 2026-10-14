@@ -1,5 +1,8 @@
 import { INSTRUMENTS } from "@/config/instruments";
-import { readDividends } from "@/lib/data/dividends";
+import { dividendSources, readDividends } from "@/lib/data/dividends";
+import { dailyCloses, readBarMeta, readBars } from "@/lib/data/bars";
+import { dividendQuality } from "@/lib/dividend-quality";
+import DividendQualityTable, { type QualityRow } from "@/components/DividendQualityTable";
 import { readQuotes } from "@/lib/data/quotes";
 import { FREQUENCY_KO, isRegular, summarizeDividends } from "@/lib/dividend-analytics";
 import { distributionWord } from "@/lib/instruments";
@@ -19,6 +22,8 @@ export default async function IncomePage() {
   const quotes = readQuotes(INSTRUMENTS.map((i) => i.symbol));
   const assets: IncomeAsset[] = [];
   const table: IncomeRow[] = [];
+  const quality: QualityRow[] = [];
+  const now = Date.now();
   for (const inst of INSTRUMENTS) {
     const divs = readDividends(inst.symbol);
     if (!divs.length) continue;
@@ -38,6 +43,26 @@ export default async function IncomePage() {
       annualized: sum.annualizedLatest,
       annualizedYield: sum.annualizedLatestYield,
       next: sum.upcoming[0] ? { exDate: sum.upcoming[0].exDate, payDate: sum.upcoming[0].payDate, amount: sum.upcoming[0].amount } : null,
+    });
+    // 저장된 일봉만 읽는다 (이 화면에서 새로 받지 않음). 일봉 수집 때 Yahoo 분배금 이벤트도 함께 저장된다.
+    const meta = readBarMeta(inst.symbol, "1d");
+    const pts = dailyCloses(readBars(inst.symbol, "1d")).map((p) => ({ date: p.date, close: p.close }));
+    const stale: string[] = [];
+    if (!meta) stale.push("일봉 미수집");
+    else if (now - meta.fetched_at > 4 * 86400_000) stale.push("4일 넘게 갱신 안 됨");
+    quality.push({
+      symbol: inst.symbol,
+      name: inst.nameKo,
+      category: inst.category,
+      categoryLabel: CATEGORY_LABELS[inst.category],
+      word: distributionWord(inst),
+      q: dividendQuality(inst.symbol, divs, pts, today, q?.price ?? null),
+      divSources: dividendSources(divs),
+      priceSource: meta?.source ?? null,
+      fetchedAt: meta?.fetched_at ?? null,
+      stale,
+      officialUrl: inst.officialUrl ?? null,
+      optionIncome: inst.strategy === "covered_call_index" || inst.strategy === "option_income_active",
     });
     assets.push({
       symbol: inst.symbol,
@@ -75,6 +100,15 @@ export default async function IncomePage() {
                   </ul>
                 </Fold>
               </div>
+            ),
+          },
+          {
+            key: "quality",
+            label: "배당 품질 비교",
+            content: (
+              <Section title="배당·분배금 품질 비교" description="지급 규모·변화·변동성과 가격·총수익률을 종목끼리 나란히 · 모두 수집된 실제 기록으로 계산">
+                <DividendQualityTable rows={quality} />
+              </Section>
             ),
           },
           { key: "planner", label: "보유 종목 현금흐름", content: <IncomePlanner assets={assets} asOf={today} /> },

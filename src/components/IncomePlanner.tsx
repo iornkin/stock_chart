@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CATEGORY_LABELS, type Category } from "@/config/instruments";
 import type { CalcPayment } from "./DividendCalculator";
+import { AfterTaxPanel, TaxRatePicker, useDivTax } from "./DividendTax";
 
 export interface IncomeAsset {
   symbol: string;
@@ -40,7 +41,7 @@ export default function IncomePlanner({ assets, asOf }: { assets: IncomeAsset[];
   const [loaded, setLoaded] = useState(false);
   const [pick, setPick] = useState("");
   const [qty, setQty] = useState("100");
-  const [withholding, setWithholding] = useState(false);
+  const tax = useDivTax();
   const bySym = useMemo(() => new Map(assets.map((a) => [a.symbol, a])), [assets]);
 
   useEffect(() => {
@@ -67,17 +68,21 @@ export default function IncomePlanner({ assets, asOf }: { assets: IncomeAsset[];
     setHoldings((h) => [...h.filter((x) => x.symbol !== pick), { symbol: pick, shares: n }]);
     setPick("");
   };
-  const net = withholding ? 0.85 : 1;
+  const net = 1 - tax.rate / 100;
+  const taxed = tax.rate > 0;
   const rows = holdings
     .map((h) => {
       const a = bySym.get(h.symbol);
       if (!a) return null;
       const ttm = a.past12.reduce((s, p) => s + p.amount * h.shares * net, 0);
       const value = a.price ? a.price * h.shares : null;
-      return { h, a, ttm, value, yield: value ? (ttm / net / value) * 100 : null };
+      const gross = a.past12.reduce((s, p) => s + p.amount * h.shares, 0);
+      return { h, a, ttm, value, yield: value ? (gross / value) * 100 : null };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
   const totalTtm = rows.reduce((s, r) => s + r.ttm, 0);
+  const totalTtmGross = rows.reduce((s, r) => s + r.a.past12.reduce((x, p) => x + p.amount * r.h.shares, 0), 0);
+  const allPriced = rows.every((r) => r.value !== null);
   const totalValue = rows.reduce((s, r) => s + (r.value ?? 0), 0);
   const months = lastMonths(asOf, 12);
   const monthly = months.map((ym) => ({
@@ -113,11 +118,8 @@ export default function IncomePlanner({ assets, asOf }: { assets: IncomeAsset[];
           <button type="button" onClick={add} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={!pick}>
             추가
           </button>
-          <label className="ml-auto flex items-center gap-2 pb-2 text-sm">
-            <input type="checkbox" checked={withholding} onChange={(e) => setWithholding(e.target.checked)} className="h-4 w-4" />
-            미국 원천징수 15% 반영
-          </label>
         </div>
+        <TaxRatePicker t={tax} />
         {!loaded ? (
           <div className="skeleton h-16" />
         ) : rows.length === 0 ? (
@@ -169,12 +171,12 @@ export default function IncomePlanner({ assets, asOf }: { assets: IncomeAsset[];
             <div className="card p-4">
               <p className="text-xs text-muted">최근 12개월 실제 지급 기준</p>
               <p className="num mt-1 text-2xl font-bold">{usd(totalTtm)}</p>
-              <p className="mt-1 text-xs text-muted">{withholding ? "원천징수 15% 반영" : "세전"}</p>
+              <p className="mt-1 text-xs text-muted">{taxed ? tax.label : "세전"}</p>
             </div>
             <div className="card p-4">
               <p className="text-xs text-muted">평가액 (최근 수집 시세)</p>
               <p className="num mt-1 text-2xl font-bold">{usd(totalValue)}</p>
-              <p className="mt-1 text-xs text-muted">TTM 수익률 {totalValue ? `${((totalTtm / net / totalValue) * 100).toFixed(2)}%` : "-"}</p>
+              <p className="mt-1 text-xs text-muted">TTM 수익률 {totalValue ? `${((totalTtmGross / totalValue) * 100).toFixed(2)}%` : "-"} (세전)</p>
             </div>
             <div className="card p-4">
               <p className="text-xs text-muted">발표된 예정 지급</p>
@@ -189,6 +191,17 @@ export default function IncomePlanner({ assets, asOf }: { assets: IncomeAsset[];
               <p className="mt-1 text-xs text-muted">최근 12개월이 반복된다는 가정의 월평균. 확정 아님</p>
             </div>
           </div>
+
+          <section className="card p-4 sm:p-6">
+            <h2 className="text-[17px] font-bold">세후 분배금 비교</h2>
+            <p className="mb-3 mt-1 text-xs text-muted">위 종목의 최근 12개월 실제 지급(세전 {usd(totalTtmGross)})을 세율 가정별로 나눠 봅니다.</p>
+            <AfterTaxPanel
+              annualGross={totalTtmGross}
+              value={allPriced && totalValue > 0 ? totalValue : null}
+              basisNote={`세전 금액 = 지금 주식 수 × 최근 12개월 실제 주당 지급액 (${asOf} 기준).`}
+              perYear={Math.max(1, Math.round(rows.reduce((s, r) => s + r.a.past12.length * (r.value ?? 0), 0) / Math.max(1, totalValue)))}
+            />
+          </section>
 
           <section className="card p-4 sm:p-6">
             <h2 className="text-[17px] font-bold">월별 받은 금액 (최근 12개월 실제 지급)</h2>
@@ -224,7 +237,7 @@ export default function IncomePlanner({ assets, asOf }: { assets: IncomeAsset[];
         </>
       )}
       <p className="text-[11px] leading-relaxed text-muted">
-        {asOf} 기준 수집된 실제 지급 기록으로 계산합니다. 원천징수 15%는 한·미 조세조약상 일반 세율을 가정한 참고값입니다. 과거 지급이 미래 지급을 보장하지 않으며, 예상치는 모두 &lsquo;가정&rsquo;으로 표시합니다.
+        {asOf} 기준 수집된 실제 지급 기록으로 계산합니다. 세금은 고른 세율 가정으로 뺀 참고값이며 확정 세액이 아닙니다. 과거 지급이 미래 지급을 보장하지 않으며, 예상치는 모두 &lsquo;가정&rsquo;으로 표시합니다.
       </p>
     </div>
   );

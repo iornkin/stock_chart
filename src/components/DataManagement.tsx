@@ -98,7 +98,7 @@ export default function DataManagement() {
   };
 
   const reset = async () => {
-    if (!window.confirm("내 자산·거래 내역·전략·계산 결과·관심 종목·화면 설정을 모두 지웁니다. 되돌릴 수 없습니다. 계속할까요?")) return;
+    if (!window.confirm("내 자산·거래 내역·전략·계산 결과·알림 규칙·관심 종목·화면 설정을 모두 지웁니다. 되돌릴 수 없습니다. 계속할까요?")) return;
     if (!window.confirm("정말 모두 지울까요? 필요하면 먼저 백업 파일을 내려받으세요.")) return;
     await resetAll();
     setMsg({ ok: true, text: "모든 개인 데이터를 지웠습니다. 화면을 새로 불러옵니다…" });
@@ -110,7 +110,7 @@ export default function DataManagement() {
       <section id="data" className="card flex scroll-mt-20 flex-col gap-4 p-5">
         <h2 className="font-semibold">데이터 관리 (내보내기·불러오기·백업)</h2>
         <p className="text-sm text-ink-2">
-          내 자산, 거래 내역, 전략, 계산 결과, 관심 종목과 화면 설정은 <b>이 브라우저에만</b> 저장됩니다. 브라우저의 사이트 데이터(쿠키·저장소)를 지우거나 다른 기기·브라우저로 옮기면 보이지 않으니 백업 파일로 옮기세요.
+          내 자산, 거래 내역, 전략, 계산 결과, 알림 규칙·기록, 관심 종목과 화면 설정은 <b>이 브라우저에만</b> 저장됩니다. 브라우저의 사이트 데이터(쿠키·저장소)를 지우거나 다른 기기·브라우저로 옮기면 보이지 않으니 백업 파일로 옮기세요.
         </p>
         <dl className="text-xs text-ink-2">
           <div>
@@ -204,7 +204,7 @@ export default function DataManagement() {
         <h2 className="font-semibold">개인정보 처리 안내</h2>
         <ul className="list-disc pl-5 text-sm leading-relaxed text-ink-2">
           <li>회원가입, 이름·이메일·전화번호·계좌번호 입력, 증권사 로그인이나 계좌 연결을 요구하지 않습니다.</li>
-          <li>입력한 보유 자산·거래 내역·현금·메모·전략·설정은 이 브라우저 저장소(IndexedDB 등)에만 저장되고, 이 사이트의 서버로 보내지 않습니다.</li>
+          <li>입력한 보유 자산·거래 내역·현금·메모·전략·알림 규칙·설정은 이 브라우저 저장소(IndexedDB 등)에만 저장되고, 이 사이트의 서버로 보내지 않습니다.</li>
           <li>개인 포트폴리오 데이터를 외부 분석 서비스나 AI API 로 보내지 않습니다. 백테스트·시뮬레이션·스트레스 테스트 계산은 브라우저 안에서 합니다.</li>
           <li>방문 분석 도구(추적 쿠키·광고 스크립트)를 쓰지 않습니다.</li>
           <li>
