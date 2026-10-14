@@ -5,6 +5,7 @@
  * - 같은 금액이 반복된다는 가정치는 '가정'으로 따로 표시한다
  */
 import { useEffect, useState } from "react";
+import { TaxRatePicker, useDivTax } from "./DividendTax";
 
 export interface CalcPayment {
   exDate: string;
@@ -19,14 +20,13 @@ const per = (v: number) => `$${v.toFixed(4).replace(/0{1,2}$/, "")}`;
 export default function DividendCalculator({ symbol, word, price, past12, upcoming, asOf }: { symbol: string; word: string; price: number | null; past12: CalcPayment[]; upcoming: CalcPayment[]; asOf: string }) {
   const [mode, setMode] = useState<"shares" | "amount">("shares");
   const [input, setInput] = useState("100");
-  const [withholding, setWithholding] = useState(false);
+  const tax = useDivTax();
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(`usi-calc-${symbol}`) ?? "null");
       if (saved && (saved.mode === "shares" || saved.mode === "amount")) {
         setMode(saved.mode);
         setInput(String(saved.input ?? "100"));
-        setWithholding(Boolean(saved.withholding));
       }
     } catch {
       /* 저장값 없음 */
@@ -34,16 +34,17 @@ export default function DividendCalculator({ symbol, word, price, past12, upcomi
   }, [symbol]);
   useEffect(() => {
     try {
-      localStorage.setItem(`usi-calc-${symbol}`, JSON.stringify({ mode, input, withholding }));
+      localStorage.setItem(`usi-calc-${symbol}`, JSON.stringify({ mode, input }));
     } catch {
       /* 저장 실패 무시 */
     }
-  }, [symbol, mode, input, withholding]);
+  }, [symbol, mode, input]);
 
   const n = Number(input.replace(/,/g, ""));
   const valid = Number.isFinite(n) && n > 0;
   const shares = !valid ? 0 : mode === "shares" ? n : price ? n / price : 0;
-  const net = withholding ? 0.85 : 1;
+  const net = 1 - tax.rate / 100;
+  const taxed = tax.rate > 0;
   const regular = past12.filter((p) => !p.special);
   const pastCash = past12.reduce((a, p) => a + p.amount * shares * net, 0);
   const regularCash = regular.reduce((a, p) => a + p.amount * shares * net, 0);
@@ -71,16 +72,13 @@ export default function DividendCalculator({ symbol, word, price, past12, upcomi
             aria-label={mode === "shares" ? "보유 주식 수" : "투자 금액"}
           />
         </label>
-        <label className="flex items-center gap-2 pb-2 text-sm">
-          <input type="checkbox" checked={withholding} onChange={(e) => setWithholding(e.target.checked)} className="h-4 w-4" />
-          미국 원천징수 15% 반영
-        </label>
       </div>
+      <TaxRatePicker t={tax} />
       {mode === "amount" && price && valid && <p className="-mt-2 text-xs text-muted">현재가 {usd(price)} 기준 약 {shares.toFixed(2)}주 (소수점 주식 포함)</p>}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-line p-4">
-          <p className="text-xs text-muted">최근 12개월 실제 지급 기준</p>
+          <p className="text-xs text-muted">최근 12개월 실제 지급 기준{taxed ? ` (${tax.label})` : " (세전)"}</p>
           <p className="num mt-1 text-2xl font-bold">{usd(pastCash)}</p>
           <p className="mt-1 text-xs text-muted">
             {past12.length}회 지급 기록 × {shares ? shares.toLocaleString("en-US", { maximumFractionDigits: 2 }) : 0}주{regular.length !== past12.length ? ` · 정기분 ${usd(regularCash)}` : ""}
@@ -108,7 +106,7 @@ export default function DividendCalculator({ symbol, word, price, past12, upcomi
                 <th>지급일</th>
                 <th>배당락일</th>
                 <th className="r">주당</th>
-                <th className="r">받은 금액{withholding ? " (세후)" : ""}</th>
+                <th className="r">받은 금액{taxed ? ` (${tax.label})` : " (세전)"}</th>
               </tr>
             </thead>
             <tbody>
@@ -128,7 +126,7 @@ export default function DividendCalculator({ symbol, word, price, past12, upcomi
         </div>
       )}
       <p className="text-[11px] leading-relaxed text-muted">
-        {asOf} 기준 수집된 실제 지급 기록으로 계산합니다(배당락일이 최근 365일 안에 있는 지급). 원천징수 15%는 한·미 조세조약상 일반 세율을 가정한 참고값이며 개인 상황에 따라 다릅니다. 과거 지급이 미래 지급을 보장하지 않습니다.
+        {asOf} 기준 수집된 실제 지급 기록으로 계산합니다(배당락일이 최근 365일 안에 있는 지급). 세금은 고른 세율 가정으로 뺀 참고값이며 확정 세액이 아닙니다. 과거 지급이 미래 지급을 보장하지 않습니다.
       </p>
     </div>
   );

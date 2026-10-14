@@ -75,6 +75,7 @@ export const SECTIONS: NavSection[] = [
     icon: "M12 3l2.8 5.9 6.2.8-4.6 4.3 1.2 6.2L12 17.3 6.4 20.2l1.2-6.2L3 9.7l6.2-.8z",
     pages: [
       { href: "/watchlist", label: "관심 종목" },
+      { href: "/alerts", label: "알림" },
       { href: "/settings", label: "설정·백업" },
       { href: "/status", label: "데이터 상태" },
     ],

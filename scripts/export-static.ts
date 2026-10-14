@@ -11,6 +11,7 @@ import { readDividends } from "@/lib/data/dividends";
 import { delayLabel, getQuotes } from "@/lib/data/quotes";
 import { loadCompareInput } from "@/lib/compare";
 import { buildIncomeMap, buildSeries, seriesSymbols } from "@/lib/data/series";
+import { buildExposureMap } from "@/lib/data/exposure";
 import { encodeSeries, seriesFileKey } from "@/lib/sim/series";
 import { availableBriefingDates, briefingHistory, briefingsForDate, latestBriefingRecords, readBriefing } from "@/lib/briefing/store";
 import type { MarketBriefing, SessionType, SymbolBriefing } from "@/lib/briefing/types";
@@ -163,6 +164,7 @@ async function main() {
   // 백테스트·시뮬레이션용 일봉 종가 + 분배금 (지수·환율 포함)
   for (const s of seriesSymbols()) write(`series/${seriesFileKey(s)}.json`, encodeSeries(buildSeries(s)));
   write("income.json", { asOf: started, items: buildIncomeMap() });
+  write("exposure.json", { asOf: started, items: buildExposureMap() });
   exportBriefings();
 
   const schedule = getSchedule();

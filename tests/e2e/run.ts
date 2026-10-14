@@ -280,6 +280,10 @@ async function main() {
     await page.goto(`${BASE}/income`, { waitUntil: "networkidle" });
     t = await textOf(page);
     check("배당 허브: 하위 탭·종목별 요약 표", t.includes("목표 배당 계산기") && t.includes("배당 캘린더") && t.includes("최근 12개월 실제 지급") && t.includes("JEPI"));
+    await page.getByRole("tab", { name: "배당 품질 비교" }).click();
+    await page.waitForTimeout(300);
+    t = await textOf(page);
+    check("배당 품질 비교: 변동성·총수익률·구성 미제공·기준", t.includes("배당·분배금 품질 비교") && t.includes("지급 변동성") && t.includes("1년 총수익률") && t.includes("제공처 미제공") && t.includes("분배금 수익률이 높다고 총수익률이 높은 것은 아닙니다"));
     await page.getByRole("tab", { name: "보유 종목 현금흐름" }).click();
     await page.getByLabel("보유 종목 선택").selectOption("SCHD");
     await page.getByRole("button", { name: "추가" }).click();

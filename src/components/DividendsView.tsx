@@ -18,8 +18,9 @@ import {
   incomeGrowthSeries,
 } from "@/lib/dividend-analytics";
 import { periodStart, periodStats, sliceFrom } from "@/lib/performance";
+import { paymentVolatility, VOL_LEVEL_RULE } from "@/lib/dividend-quality";
 import { changeClass, fmtDividend, fmtPct, fmtUsd } from "@/lib/format";
-import { addDays } from "@/lib/time";
+import { addDays, formatEt } from "@/lib/time";
 import { etDate } from "@/lib/time";
 import BarChartSvg from "./BarChartSvg";
 import DividendCalculator from "./DividendCalculator";
@@ -87,6 +88,7 @@ export default async function DividendsView({ inst, price }: { inst: InstrumentC
     .filter((d) => d.exDate > `${Number(today.slice(0, 4)) - 5}-01-01`)
     .map((d) => ({ label: d.exDate, value: d.amount, sub: `${KIND_KO[d.kind]} · 지급일 ${d.payDate ?? "미제공"}`, muted: !isRegular(d) }));
 
+  const vol = paymentVolatility(divs, today);
   const ttmUpDown = trend.count ? `최근 ${trend.count}회 변경 중 증가 ${trend.up}회 · 감소 ${trend.down}회 · 동일 ${trend.same}회` : "비교할 지급 기록 부족";
 
   return (
@@ -97,7 +99,7 @@ export default async function DividendsView({ inst, price }: { inst: InstrumentC
         </Notice>
       )}
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-5">
         <Stat label={`최근 ${word} (주당)`} value={fmtDividend(sum.latest?.amount)} sub={`배당락 ${sum.latest?.exDate ?? "-"} · 지급 ${sum.latest?.payDate ?? "미제공"}`} />
         <Stat label="최근 12개월 지급 합계" value={fmtDividend(sum.ttmSum)} sub={`${sum.ttmCount}회${sum.ttmSpecialSum ? ` · 특별 ${fmtDividend(sum.ttmSpecialSum)} 별도` : ""}`} />
         <Stat label="TTM 수익률" value={fmtPct(sum.ttmYield, 2, false)} sub={`실제 지급액 ÷ 현재가 ${fmtUsd(price)}`} />
@@ -110,6 +112,29 @@ export default async function DividendsView({ inst, price }: { inst: InstrumentC
         />
         <Stat label={`발표된 다음 ${word}`} value={sum.upcoming[0] ? fmtDividend(sum.upcoming[0].amount) : "발표 없음"} sub={sum.upcoming[0] ? `배당락 ${sum.upcoming[0].exDate} · 지급 ${sum.upcoming[0].payDate ?? "미제공"}` : "발표된 경우에만 표시"} />
         <Stat label="제공처 기재 주기" value={sum.frequency.reportedPerYear ? `연 ${sum.frequency.reportedPerYear}회` : "미제공"} sub={sum.frequency.consistentWithReported === false ? "기록 판정과 다름 — 기록 기준 표시" : "Polygon 제공 시"} />
+        <Stat
+          label="지급 변동성"
+          value={vol ? `${vol.level} (${vol.cvPct.toFixed(1)}%)` : "기록 부족"}
+          sub={vol ? `최근 정기 지급 ${vol.n}회 (${vol.from}~${vol.to}) 변동 계수 · 직전보다 감소 ${vol.decreases}회` : "정기 지급 기록 4회 이상 필요"}
+          note={VOL_LEVEL_RULE}
+        />
+        <Stat
+          label={`${word} 구성`}
+          value="제공처 미제공"
+          sub={
+            <>
+              배당·이자·자본이득·원금 반환 비율을 받지 않아 추정하지 않음
+              {inst.officialUrl && (
+                <>
+                  {" · "}
+                  <a className="link" href={inst.officialUrl} target="_blank" rel="noopener noreferrer">
+                    {inst.kind === "etf" ? "운용사 공시(19a-1 등)" : "기업 공시"}
+                  </a>
+                </>
+              )}
+            </>
+          }
+        />
       </div>
 
       <section>
@@ -284,7 +309,7 @@ export default async function DividendsView({ inst, price }: { inst: InstrumentC
       </section>
 
       <section>
-        <H3 sub={`출처: ${dividendSources(divs).join(", ")} · 지급일은 Nasdaq/Polygon 이 제공할 때만 표시`}>과거 지급 내역</H3>
+        <H3 sub={`출처: ${dividendSources(divs).join(", ")} · 지급일은 Nasdaq/Polygon 이 제공할 때만 표시 · 기록 확인 ${barsRes.meta.fetchedAt ? formatEt(barsRes.meta.fetchedAt) : "미수집"}${barsRes.meta.stale ? " (최신 조회 실패 — 보관된 기록)" : ""}`}>과거 지급 내역</H3>
         <div className="max-h-[480px] overflow-auto">
           <table className="table-basic">
             <thead className="sticky top-0 bg-surface">

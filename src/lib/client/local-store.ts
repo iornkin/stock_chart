@@ -7,8 +7,8 @@
  */
 import { useCallback, useEffect, useState } from "react";
 
-export type LocalKey = "portfolio" | "strategies" | "runs";
-export const LOCAL_KEYS: LocalKey[] = ["portfolio", "strategies", "runs"];
+export type LocalKey = "portfolio" | "strategies" | "runs" | "alerts";
+export const LOCAL_KEYS: LocalKey[] = ["portfolio", "strategies", "runs", "alerts"];
 /** 없앤 기능의 옛 데이터 (가상 투자 계좌) — 이 브라우저에 남지 않게 지운다 */
 const LEGACY_KEYS = ["virtual"];
 

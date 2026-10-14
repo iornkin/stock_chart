@@ -8,6 +8,7 @@ import { digestOf, type BriefingDigest } from "@/lib/briefing/digest";
 import type { SymbolBriefing } from "@/lib/briefing/types";
 import { decodeSeries, seriesFileKey, type PriceSeries, type SeriesWire } from "@/lib/sim/series";
 import type { IncomeInfo } from "@/lib/sim/income";
+import type { ExposureResponse } from "@/lib/exposure-types";
 
 export async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url, IS_STATIC ? { cache: "no-cache" } : undefined);
@@ -88,13 +89,28 @@ export interface IncomeResponse {
   items: Record<string, IncomeInfo>;
 }
 
-let incomeCache: Promise<IncomeResponse> | null = null;
+/** 페이지를 오래 열어 둔 경우 새로 수집된 자료를 다시 받도록 캐시 유효 시간을 둔다 */
+const SUMMARY_TTL_MS = 10 * 60_000;
+let incomeCache: { at: number; p: Promise<IncomeResponse> } | null = null;
 
 /** 지원 종목별 배당·분배금 요약 */
 export function fetchIncome(): Promise<IncomeResponse> {
-  if (!incomeCache) {
-    incomeCache = getJson<IncomeResponse>(IS_STATIC ? staticDataUrl("income.json") : "/api/income");
-    incomeCache.catch(() => (incomeCache = null));
+  if (!incomeCache || Date.now() - incomeCache.at > SUMMARY_TTL_MS) {
+    const p = getJson<IncomeResponse>(IS_STATIC ? staticDataUrl("income.json") : "/api/income");
+    incomeCache = { at: Date.now(), p };
+    p.catch(() => (incomeCache = null));
   }
-  return incomeCache;
+  return incomeCache.p;
+}
+
+let exposureCache: { at: number; p: Promise<ExposureResponse> } | null = null;
+
+/** 지원 종목별 상위 편입 종목·섹터 (내 자산 노출 분석·알림) */
+export function fetchExposure(): Promise<ExposureResponse> {
+  if (!exposureCache || Date.now() - exposureCache.at > SUMMARY_TTL_MS) {
+    const p = getJson<ExposureResponse>(IS_STATIC ? staticDataUrl("exposure.json") : "/api/exposure");
+    exposureCache = { at: Date.now(), p };
+    p.catch(() => (exposureCache = null));
+  }
+  return exposureCache.p;
 }

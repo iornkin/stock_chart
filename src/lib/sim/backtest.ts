@@ -190,6 +190,22 @@ export interface BacktestResult {
   contributions: number;
   capitalGains: CapitalGainsResult | null;
   notes: string[];
+  verification: BacktestVerification;
+}
+
+/** 결과를 검증·재현하기 위한 기록 (요청 기간과 실제 계산 기간, 종목별 데이터 범위, 뺀 날) */
+export interface BacktestVerification {
+  requested: { start: string; end: string };
+  used: { start: string; end: string };
+  /** 기간 안에서 일부 종목 가격이 없어 계산에서 뺀 거래일 */
+  skippedDays: number;
+  skippedSample: string[];
+  coverage: (CoverageItem & { source: string | null; fetchedAt: number | null; divEvents: number })[];
+  commonStart: string | null;
+  commonEnd: string | null;
+  /** 실제로 반영한 분배금 지급 건수 (보유 수량이 있을 때만) */
+  divEvents: number;
+  rebalances: number;
 }
 
 export interface BacktestFailure {
@@ -222,6 +238,9 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
   const notes = [...cov.notes];
   if (cal[0] !== cfg.start) notes.push(`시작일 ${cfg.start}은 거래일이 아니거나 일부 종목 가격이 없어 ${cal[0]} 종가부터 계산했습니다.`);
   const skipped = i1 - Math.max(0, i0) + 1 - cal.length;
+  const calSet = new Set(cal);
+  const skippedSample: string[] = [];
+  for (let i = Math.max(0, i0); i0 >= 0 && i <= i1 && skippedSample.length < 5; i++) if (!calSet.has(base.dates[i])) skippedSample.push(base.dates[i]);
   if (skipped > 0) notes.push(`일부 종목의 가격이 없는 ${skipped}개 거래일은 계산에서 뺐습니다 (가격을 임의로 채우지 않음).`);
   // 월말 납입 판정을 위해 기간 다음 거래일을 확인
   const afterEnd = base.dates[indexOnOrBefore(base.dates, cal[cal.length - 1]) + 1] ?? null;
@@ -284,6 +303,9 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
   };
   let cash = 0;
   let costs = 0;
+  let divEvents = 0;
+  let rebalances = 0;
+  const divCount = new Array<number>(k).fill(0);
   let contributedTotal = cfg.initial;
   let contributions = 0;
   let incGross = 0;
@@ -323,6 +345,8 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
         const gross = shares[s] * ev.amount;
         if (gross <= 0) continue;
         const net = gross * (1 - tax);
+        divEvents++;
+        divCount[s]++;
         incGross += gross;
         incTax += gross - net;
         divGross[s] += gross;
@@ -381,6 +405,7 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
     // 3) 리밸런싱 (새 기간 첫 거래일) — 같은 날 납입금도 함께 맞춘다
     const rebalanceToday = cfg.rebalance !== "none" && periodKey(cal[i], cfg.rebalance) !== periodKey(cal[i - 1], cfg.rebalance);
     if (rebalanceToday) {
+      rebalances++;
       const cur = shares.map((sh, s) => sh * px[s][i]);
       const total = cur.reduce((a, b) => a + b, 0) + flow;
       let traded = 0;
@@ -491,6 +516,17 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
     contributions,
     capitalGains,
     notes,
+    verification: {
+      requested: { start: cfg.start, end: cfg.end },
+      used: { start: cal[0], end: cal[n - 1] },
+      skippedDays: Math.max(0, skipped),
+      skippedSample,
+      coverage: cov.items.map((it, s) => ({ ...it, source: ss[s].source, fetchedAt: ss[s].fetchedAt, divEvents: divCount[s] })),
+      commonStart: cov.commonStart,
+      commonEnd: cov.commonEnd,
+      divEvents,
+      rebalances,
+    },
   };
 }
 

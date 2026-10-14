@@ -171,6 +171,10 @@ async function main() {
     t = await textOf(page);
     check("배당 탭: 계산기·수익률 분해 (정적)", t.includes("현금흐름 계산기") && t.includes("수익률의 관계"));
     await page.goto(`${BASE}/income/`, { waitUntil: "networkidle" });
+    await page.getByRole("tab", { name: "배당 품질 비교" }).click();
+    await page.waitForTimeout(300);
+    t = await textOf(page);
+    check("배당 품질 비교: 변동성·총수익률·구성 미제공·기준", t.includes("배당·분배금 품질 비교") && t.includes("지급 변동성") && t.includes("1년 총수익률") && t.includes("제공처 미제공") && t.includes("분배금 수익률이 높다고 총수익률이 높은 것은 아닙니다"));
     await page.getByRole("tab", { name: "보유 종목 현금흐름" }).click();
     await page.getByLabel("보유 종목 선택").selectOption("JEPI");
     await page.getByRole("button", { name: "추가" }).click();

@@ -75,6 +75,11 @@ export function validateBundle(x: unknown): { ok: true; bundle: UserBundle; summ
     summary.push(`전략: ${d.strategies.length}개`);
   }
   if (d.runs !== undefined && !Array.isArray(d.runs)) return { ok: false, error: "최근 계산 결과 형식이 올바르지 않습니다." };
+  if (d.alerts !== undefined) {
+    const a = d.alerts;
+    if (!isObj(a) || !Array.isArray(a.rules) || !Array.isArray(a.log) || !isObj(a.baseline)) return { ok: false, error: "알림 데이터 형식이 올바르지 않습니다." };
+    summary.push(`알림 규칙: ${a.rules.length}개`);
+  }
   const browser = isObj(x.browser) ? Object.fromEntries(Object.entries(x.browser).filter(([k, v]) => k.startsWith("usi-") && typeof v === "string")) : {};
   if (Object.keys(browser).length) summary.push(`화면 설정·관심 종목 등 ${Object.keys(browser).length}개 항목`);
   return { ok: true, bundle: { format: BUNDLE_FORMAT, version: 1, exportedAt: String(x.exportedAt ?? ""), data: d as UserBundle["data"], browser: browser as Record<string, string> }, summary };

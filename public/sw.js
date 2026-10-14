@@ -29,3 +29,15 @@ self.addEventListener("fetch", (event) => {
   if (event.request.mode !== "navigate") return;
   event.respondWith(fetch(event.request).catch(() => caches.match(OFFLINE).then((r) => r || Response.error())));
 });
+
+// 알림(이 사이트가 열려 있을 때 띄운 브라우저 알림)을 누르면 알림 화면으로
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || self.registration.scope;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      const c = list.find((w) => "focus" in w);
+      return c ? c.focus() : self.clients.openWindow(url);
+    }),
+  );
+});
