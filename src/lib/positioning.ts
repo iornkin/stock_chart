@@ -7,8 +7,10 @@
  * - 일일 공매도 거래량(FINRA Reg SHO): 그날 장외 보고분 거래 중 공매도 비중. 잔고가 아니다.
  * - 옵션 통계: 풋·콜 거래량과 미결제약정. 헤지·스프레드가 섞여 방향성 포지션을 알 수 없다.
  * - 기관 13F: 분기 말 롱 보유 스냅샷. 지금도 같은 수량을 보유한다는 뜻이 아니다.
+ * - CNN 공포·탐욕 지수: CNN 이 7개 지표로 만든 지수를 그대로 쓴다. 이 사이트가 만든 종합 점수가 아니다.
  * 계산할 수 없으면(분모 0·자료 없음) null 을 돌려준다. 다른 지표 값으로 대신 채우지 않는다.
  */
+import type { FgRating } from "./providers/cnn";
 
 const DAY = 86400_000;
 
@@ -304,4 +306,37 @@ export function cusipValid(cusip: string): boolean {
     sum += Math.floor(v / 10) + (v % 10);
   }
   return (10 - (sum % 10)) % 10 === Number(cusip[8]);
+}
+
+// ───────────────────────────── CNN 공포·탐욕 지수 ─────────────────────────────
+
+export const FG_RATING_KO: Record<FgRating, string> = {
+  "extreme fear": "극단적 공포",
+  fear: "공포",
+  neutral: "중립",
+  greed: "탐욕",
+  "extreme greed": "극단적 탐욕",
+};
+
+/**
+ * CNN 화면의 구간 (0~25~45~55~75~100). 실제 기록(2024-10-14~2026-10-14, 501거래일)의 판정과 점수로 확인:
+ * 극단적 공포 최대 24.8, 공포 25.1~44.9, 중립 45.2~55.0, 탐욕 55.0~74.7, 극단적 탐욕 75.1 이상 — 이 구간과 CNN 판정이 다른 날 0일.
+ * 판정은 CNN 이 준 값을 먼저 쓰고, 없을 때만 이 구간으로 정한다.
+ */
+export const FG_ZONES: { rating: FgRating; from: number; to: number }[] = [
+  { rating: "extreme fear", from: 0, to: 25 },
+  { rating: "fear", from: 25, to: 45 },
+  { rating: "neutral", from: 45, to: 55 },
+  { rating: "greed", from: 55, to: 75 },
+  { rating: "extreme greed", from: 75, to: 100 },
+];
+
+export function fgZone(score: number | null | undefined): FgRating | null {
+  if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 100) return null;
+  return (FG_ZONES.find((z) => score < z.to) ?? FG_ZONES[FG_ZONES.length - 1]).rating;
+}
+
+/** CNN 판정이 있으면 그것, 없으면 점수 구간 */
+export function fgRating(score: number | null | undefined, cnnRating: FgRating | null | undefined): FgRating | null {
+  return cnnRating ?? fgZone(score);
 }

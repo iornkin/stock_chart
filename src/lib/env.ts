@@ -53,6 +53,7 @@ export const env = {
   get finraCdnBase() { return str("FINRA_CDN_BASE", "https://cdn.finra.org"); },
   get cboeCdnBase() { return str("CBOE_CDN_BASE", "https://cdn.cboe.com"); },
   get aaiiBase() { return str("AAII_BASE", "https://www.aaii.com"); },
+  get cnnBase() { return str("CNN_DATAVIZ_BASE", "https://production.dataviz.cnn.io"); },
   /** 포지션·심리 데이터 수집 (공매도·옵션·13F·투자심리 설문) */
   get positioningEnabled() { return bool("ENABLE_POSITIONING", true); },
   // ── AI 브리핑 (선택) ──

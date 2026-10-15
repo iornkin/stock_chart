@@ -10,6 +10,7 @@ import { allInstruments, getInstrument } from "../instruments";
 import { previousTradingDay, sessionTimes } from "../market-calendar";
 import * as aaii from "../providers/aaii";
 import * as cboe from "../providers/cboe";
+import * as cnn from "../providers/cnn";
 import * as finra from "../providers/finra";
 import * as nasdaq from "../providers/nasdaq";
 import * as sec from "../providers/sec";
@@ -83,6 +84,28 @@ export function saveSentiment(source: string, weeks: aaii.SentimentWeek[], now =
         source, w.weekEnding, w.bullish, w.neutral, w.bearish, now,
       );
     return weeks.length;
+  });
+}
+
+/** CNN 공포·탐욕 지수 지금 값·비교 값·구성 지표 (일별 기록은 fear_greed 표) */
+export type FearGreedNow = Omit<cnn.FearGreed, "history" | "invalidPoints">;
+
+/** 일별 기록은 수집 기준일까지만 저장 (그 뒤 날짜는 아직 진행 중인 값) — 같은 날짜는 덮어써 늦게 바뀐 값을 반영 */
+export function saveFearGreed(fg: cnn.FearGreed, tradeDate: string, now = Date.now()): number {
+  const rows = fg.history.filter((p) => p.date <= tradeDate);
+  const snap: FearGreedNow = { score: fg.score, rating: fg.rating, at: fg.at, previous: fg.previous, components: fg.components };
+  return tx(() => {
+    for (const p of rows)
+      run(
+        `INSERT INTO fear_greed(date, score, rating, source, fetched_at) VALUES(?,?,?,?,?)
+         ON CONFLICT(date) DO UPDATE SET score=excluded.score, rating=excluded.rating, fetched_at=excluded.fetched_at`,
+        p.date, p.score, p.rating, "CNN", now,
+      );
+    run(
+      "INSERT INTO snapshots(kind, symbol, data, source, fetched_at) VALUES('cnn_fear_greed','MARKET',?,?,?) ON CONFLICT(kind, symbol) DO UPDATE SET data=excluded.data, source=excluded.source, fetched_at=excluded.fetched_at",
+      JSON.stringify(snap), "CNN", now,
+    );
+    return rows.length;
   });
 }
 
@@ -245,7 +268,24 @@ export async function collectPositioning(o: CollectOptions): Promise<Record<stri
     return `${n}주 (최근 ${p.weeks[0]?.weekEnding ?? "-"})`;
   });
 
-  // 6) 기관 13F — 최근 2개 보고 기간, 아직 받지 않은 제출만
+  // 6) CNN 공포·탐욕 지수 — 처음에는 약 2년, 이후에는 최근 약 1년을 다시 받아 덮어씀 (장 마감 뒤 늦게 바뀐 값 반영)
+  await step("fear_greed", async () => {
+    const have = get<{ n: number }>("SELECT count(*) AS n FROM fear_greed")?.n ?? 0;
+    let fg: cnn.FearGreed;
+    let note = "";
+    if (have < 300) {
+      try {
+        fg = await cnn.fetchFearGreed(addDaysIso(o.tradeDate, -730));
+      } catch (e) {
+        note = ` (2년 기록 요청 실패 → 최근 1년만: ${(e as Error).message.slice(0, 60)})`;
+        fg = await cnn.fetchFearGreed();
+      }
+    } else fg = await cnn.fetchFearGreed();
+    const n = saveFearGreed(fg, o.tradeDate, o.now);
+    return `지금 ${fg.score.toFixed(1)} (${fg.rating ?? "판정 없음"}, ${new Date(fg.at).toISOString().slice(0, 16)}Z) · 일별 ${n}일${fg.invalidPoints ? `, 잘못된 값 ${fg.invalidPoints}개 제외` : ""}${note}`;
+  });
+
+  // 7) 기관 13F — 최근 2개 보고 기간, 아직 받지 않은 제출만
   if (!o.skip13f) {
     await step("thirteen_f", async () => {
       if (!sec.secEnabled()) return "건너뜀 — SEC_USER_AGENT 미설정";
@@ -445,6 +485,7 @@ export function readSymbolPositioning(symbol: string): SymbolPositioning {
 }
 
 export interface MarketSentimentData {
+  fearGreed: { now: FearGreedNow; history: { date: string; score: number; rating: cnn.FgRating | null }[]; info: SourceInfo } | null;
   sentiment: { rows: SentimentRow[]; averages: { bullish: number; neutral: number; bearish: number } | null; info: SourceInfo } | null;
   marketOptions: { rows: { date: string; product: cboe.CboeProduct; callVolume: number | null; putVolume: number | null; callOI: number | null; putOI: number | null; published: number | null }[]; info: SourceInfo } | null;
   institutions: {
@@ -464,6 +505,12 @@ export interface MarketSentimentData {
   institutionsInfo: SourceInfo;
 }
 
+/** 대시보드용: CNN 공포·탐욕 지수 지금 값만 */
+export function readFearGreedNow(): { now: FearGreedNow; fetchedAt: number } | null {
+  const s = readSnapshot<FearGreedNow>("cnn_fear_greed", "MARKET");
+  return s?.data && typeof s.data.score === "number" ? { now: s.data, fetchedAt: s.fetchedAt } : null;
+}
+
 /** opts.institutions=false 면 기관 13F 요약을 건너뛴다 (종목 화면의 '시장 전체 참고'용) */
 export function readMarketSentiment(opts: { institutions?: boolean } = {}): MarketSentimentData {
   const ss = all<{ week_ending: string; bullish: number; neutral: number; bearish: number; fetched_at: number }>("SELECT week_ending, bullish, neutral, bearish, fetched_at FROM sentiment_survey WHERE source='AAII' ORDER BY week_ending");
@@ -471,6 +518,8 @@ export function readMarketSentiment(opts: { institutions?: boolean } = {}): Mark
   const mo = all<{ trade_date: string; product: string; call_volume: number | null; put_volume: number | null; call_oi: number | null; put_oi: number | null; published_ratio: number | null; fetched_at: number }>(
     "SELECT trade_date, product, call_volume, put_volume, call_oi, put_oi, published_ratio, fetched_at FROM option_market WHERE product IN ('total','equity','index','etp') ORDER BY trade_date",
   );
+  const fgSnap = readSnapshot<FearGreedNow>("cnn_fear_greed", "MARKET");
+  const fgRows = all<{ date: string; score: number; rating: string | null }>("SELECT date, score, rating FROM fear_greed ORDER BY date");
   const insts: MarketSentimentData["institutions"] = [];
   let instFetched: number | null = null;
   for (const it of opts.institutions === false ? [] : INSTITUTIONS) {
@@ -514,6 +563,13 @@ export function readMarketSentiment(opts: { institutions?: boolean } = {}): Mark
   }
   insts.sort((a, b) => b.period.localeCompare(a.period) || (b.totalValue ?? 0) - (a.totalValue ?? 0));
   return {
+    fearGreed: fgSnap?.data
+      ? {
+          now: fgSnap.data,
+          history: fgRows.map((r) => ({ date: r.date, score: r.score, rating: cnn.normalizeRating(r.rating) })),
+          info: { source: "CNN Business Fear & Greed Index", fetchedAt: fgSnap.fetchedAt },
+        }
+      : null,
     sentiment: ss.length ? { rows: ss.map((r) => ({ week: r.week_ending, bullish: r.bullish, neutral: r.neutral, bearish: r.bearish })), averages: meta?.data?.averages ?? null, info: { source: "AAII Sentiment Survey", fetchedAt: Math.max(...ss.map((r) => r.fetched_at)) } } : null,
     marketOptions: mo.length
       ? {

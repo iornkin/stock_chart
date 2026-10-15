@@ -213,6 +213,10 @@ CREATE TABLE IF NOT EXISTS sentiment_survey (
   fetched_at INTEGER NOT NULL,
   PRIMARY KEY (source, week_ending)
 );
+-- CNN 공포·탐욕 지수 일별 기록 (CNN 값 그대로, 그날 마지막 값). 지금 값·구성 지표는 snapshots(kind='cnn_fear_greed')
+CREATE TABLE IF NOT EXISTS fear_greed (
+  date TEXT PRIMARY KEY, score REAL NOT NULL, rating TEXT, source TEXT NOT NULL, fetched_at INTEGER NOT NULL
+);
 -- 기관 13F: 제출 묶음과 (이 사이트 종목 + 상위 보유) 행
 CREATE TABLE IF NOT EXISTS inst_filings (
   accession TEXT PRIMARY KEY, cik INTEGER NOT NULL, filer_name TEXT NOT NULL, form TEXT NOT NULL,

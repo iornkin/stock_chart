@@ -1,6 +1,6 @@
 /**
  * ⚠ 테스트 전용 가짜(모의) 포지션·심리 응답 ⚠ — mock-upstream 에서 불러 쓴다.
- * FINRA·Cboe·AAII·Nasdaq 옵션 체인·SEC 13F 의 '응답 형식'만 흉내 낸 합성 데이터이며 실제 값이 아니다.
+ * FINRA·Cboe·AAII·Nasdaq 옵션 체인·SEC 13F·CNN 공포·탐욕 지수의 '응답 형식'만 흉내 낸 합성 데이터이며 실제 값이 아니다.
  * 13F 가치는 모의 서버 자신의 종가 × 수량으로 만들어 앱의 가격 대조 검사가 통과하게 한다.
  */
 import type http from "node:http";
@@ -120,8 +120,57 @@ function aaiiWeeks(LAST: string, n: number) {
   return out;
 }
 
+/** 모의 CNN 공포·탐욕 응답 — 실제 CNN 처럼 일별 점(UTC 0시) + 진행 중인 다음 날 점 + 지금 시각 점 */
+function mockFearGreed(LAST: string, start: string, hash: (s: string) => number) {
+  const DAY = 86400_000;
+  const zone = (v: number) => (v < 25 ? "extreme fear" : v < 45 ? "fear" : v < 55 ? "neutral" : v < 75 ? "greed" : "extreme greed");
+  const scoreOf = (d: string, i: number) => Math.min(99, Math.max(1, 50 + 38 * Math.sin(i / 17) + ((hash(`fg#${d}`) % 100) - 50) / 10));
+  const pts: { x: number; y: number; rating: string }[] = [];
+  let i = 0;
+  for (let d = start; d <= LAST; d = addDays(d, 1)) {
+    if (!isTradingDay(d)) continue;
+    const y = scoreOf(d, i++);
+    pts.push({ x: Date.parse(`${d}T00:00:00Z`), y, rating: zone(y) });
+  }
+  // 진행 중인 다음 날 점 (앱은 수집 기준일 뒤 날짜를 저장하면 안 됨) + 지금 시각 점
+  const nextDay = addDays(LAST, 1);
+  const live = Math.min(99, Math.max(1, pts[pts.length - 1].y + 3));
+  const nowMs = Date.parse(`${nextDay}T11:07:31Z`);
+  pts.push({ x: Date.parse(`${nextDay}T00:00:00Z`), y: live, rating: zone(live) }, { x: nowMs, y: live, rating: zone(live) });
+  const at = (k: number) => pts[pts.length - 1 - k].y;
+  const comp = (score: number, ys: number[]) => ({ timestamp: Date.parse(`${LAST}T20:30:00Z`), score, rating: zone(score), data: ys.map((y, j) => ({ x: Date.parse(`${LAST}T00:00:00Z`) - (ys.length - 1 - j) * DAY, y, rating: "neutral" })) });
+  return {
+    fear_and_greed: { score: live, rating: zone(live), timestamp: new Date(nowMs).toISOString().replace(".000Z", "+00:00"), previous_close: at(2), previous_1_week: at(7), previous_1_month: at(22), previous_1_year: pts.length > 254 ? at(253) : null },
+    fear_and_greed_historical: { timestamp: nowMs, score: live, rating: zone(live), data: pts },
+    market_momentum_sp500: comp(62.4, [5000, 5100]),
+    market_momentum_sp125: comp(62.4, [4950, 4960]),
+    stock_price_strength: comp(18.2, [-3.5, -4.25]),
+    stock_price_breadth: comp(41, [120.5, 118.25]),
+    put_call_options: comp(55.5, [0.8, 0.75]),
+    market_volatility_vix: comp(30, [21.5, 22.25]),
+    market_volatility_vix_50: comp(30, [18.5, 18.75]),
+    junk_bond_demand: comp(70.1, [1.5, 1.25]),
+    // 안전자산 수요는 점수 없음 (앱은 '-'·데이터 미제공으로 표시해야 함)
+    safe_haven_demand: { timestamp: Date.parse(`${LAST}T20:30:00Z`), score: null, rating: null, data: [] },
+  };
+}
+
 export function positioningRoute(req: http.IncomingMessage, res: http.ServerResponse, p: string, ctx: Ctx): boolean {
   const { LAST, send } = ctx;
+  // ── CNN 공포·탐욕 지수 (브라우저 User-Agent 필수, 너무 이른 시작일은 500) ──
+  const fg = p.match(/^\/cnn\/index\/fearandgreed\/graphdata(?:\/(\d{4}-\d{2}-\d{2}))?$/);
+  if (fg) {
+    if (!/Mozilla/.test(String(req.headers["user-agent"] ?? ""))) {
+      send(res, 418, "I'm a teapot. You're a bot.");
+      return true;
+    }
+    if (fg[1] && fg[1] < "2024-01-01") {
+      send(res, 500, { error: "range" });
+      return true;
+    }
+    send(res, 200, mockFearGreed(LAST, fg[1] ?? addDays(LAST, -365), ctx.hash));
+    return true;
+  }
   // ── FINRA 공매도 잔고 (POST) ──
   if (p === "/finra-api/data/group/otcMarket/name/consolidatedShortInterest") {
     let body = "";

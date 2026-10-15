@@ -363,12 +363,12 @@ describe("저장·조회 (임시 DB)", async () => {
   });
 
   it("출처가 모두 실패해도 작업이 멈추지 않고 출처별로 실패를 남김", async () => {
-    for (const k of ["FINRA_API_BASE", "FINRA_CDN_BASE", "CBOE_CDN_BASE", "AAII_BASE", "NASDAQ_API_BASE"]) process.env[k] = "http://127.0.0.1:9";
+    for (const k of ["FINRA_API_BASE", "FINRA_CDN_BASE", "CBOE_CDN_BASE", "AAII_BASE", "NASDAQ_API_BASE", "CNN_DATAVIZ_BASE"]) process.env[k] = "http://127.0.0.1:9";
     process.env.RATE_LIMIT_SCALE = "0";
     const close = Date.parse("2026-10-14T20:00:00Z");
     const parts = await pos.collectPositioning({ tradeDate: "2026-10-14", now: close + 3600_000, log: () => {}, symbols: ["AAPL"], skip13f: true });
-    expect(Object.keys(parts).sort()).toEqual(["market_options", "options", "sentiment", "short_interest", "short_volume"]);
-    for (const k of ["short_interest", "short_volume", "options", "sentiment"]) expect(parts[k].ok, k).toBe(false);
+    expect(Object.keys(parts).sort()).toEqual(["fear_greed", "market_options", "options", "sentiment", "short_interest", "short_volume"]);
+    for (const k of ["short_interest", "short_volume", "options", "sentiment", "fear_greed"]) expect(parts[k].ok, k).toBe(false);
     // 기존에 저장한 값은 그대로
     expect(pos.readSymbolPositioning("AAPL").shortInterest?.points[0].shortQty).toBe(110);
   }, 60_000);
