@@ -22,7 +22,7 @@ export default function MobileNav() {
   const tabs = BOTTOM_TABS.map((k) => SECTIONS.find((s) => s.key === k)!);
   const inMenu = current !== undefined && !BOTTOM_TABS.includes(current);
   return (
-    <div className="lg:hidden">
+    <div className="no-print lg:hidden">
       {open && (
         <div className="fixed inset-0 z-40 flex flex-col bg-surface" role="dialog" aria-modal="true" aria-label="전체 메뉴">
           <div className="flex h-14 items-center justify-between border-b border-line px-4">

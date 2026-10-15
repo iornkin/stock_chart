@@ -150,6 +150,10 @@ export interface HoldingResult {
   value: number;
   endWeight: number;
   dividendsGross: number;
+  /** 세후 (분배금 세율 적용) */
+  dividendsNet: number;
+  /** 연도별 받은 분배금 (지급일, 없으면 배당락일 기준) */
+  dividendYears: { year: string; gross: number; net: number }[];
 }
 
 export interface BacktestResult {
@@ -288,6 +292,8 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
 
   const shares = new Array<number>(k).fill(0);
   const divGross = new Array<number>(k).fill(0);
+  const divNet = new Array<number>(k).fill(0);
+  const divYear = ss.map(() => new Map<string, { gross: number; net: number }>());
   const addShares = (s: number, q: number, i: number) => {
     shares[s] += q;
     if (books && fxArr) books[s].buy(q, q * px[s][i], q * px[s][i] * fxArr[i]);
@@ -350,6 +356,11 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
         incGross += gross;
         incTax += gross - net;
         divGross[s] += gross;
+        divNet[s] += net;
+        const dy = divYear[s].get((ev.pay ?? ev.ex).slice(0, 4)) ?? { gross: 0, net: 0 };
+        dy.gross += gross;
+        dy.net += net;
+        divYear[s].set((ev.pay ?? ev.ex).slice(0, 4), dy);
         const ym = (ev.pay ?? ev.ex).slice(0, 7);
         const m = monthInc.get(ym) ?? { gross: 0, net: 0 };
         m.gross += gross;
@@ -511,6 +522,8 @@ export function runBacktest(cfg: BacktestConfig, series: Record<string, PriceSer
       value: endValues[s],
       endWeight: invested > 0 ? (endValues[s] / invested) * 100 : 0,
       dividendsGross: divGross[s],
+      dividendsNet: divNet[s],
+      dividendYears: [...divYear[s].entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([year, e]) => ({ year, ...e })),
     })),
     costs,
     contributions,
@@ -659,4 +672,86 @@ export function toKrw(r: BacktestResult, fx: PriceSeries | undefined): KrwView |
     fxStart: { date: s.date, rate: s.close },
     fxEnd: { date: e.date, rate: e.close },
   };
+}
+
+/** 위험 비교용 추가 지표: 최악의 12개월·최악의 달·최대 낙폭 회복 기간·연도별 수익률 변동 */
+export interface RiskExtras {
+  /** 월말 기준 연속 12개월 시간가중 수익률 중 가장 나쁜 값 (%) — 12개월 미만이면 null */
+  worst12mPct: number | null;
+  worst12mEnd: string | null;
+  worstMonthPct: number | null;
+  worstMonth: string | null;
+  /** 최대 낙폭 고점 → 회복까지 일수 (회복 못 했으면 null) */
+  recoveryDays: number | null;
+  /** 최대 낙폭 고점 → 기간 말까지 회복 못 했으면 그 일수 */
+  underwaterDays: number | null;
+  /** 1년 전체 연도 수익률의 표준편차 (%p) — 2개 연도 미만이면 null */
+  annualStdPct: number | null;
+}
+
+const dayDiff = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+
+export function riskExtras(r: BacktestResult): RiskExtras {
+  // 월말 시간가중 지수
+  const monthEnd: { ym: string; v: number }[] = [];
+  for (let i = 0; i < r.dates.length; i++) {
+    const ym = r.dates[i].slice(0, 7);
+    if (monthEnd.length && monthEnd[monthEnd.length - 1].ym === ym) monthEnd[monthEnd.length - 1].v = r.twr[i];
+    else monthEnd.push({ ym, v: r.twr[i] });
+  }
+  let worst12: number | null = null;
+  let worst12End: string | null = null;
+  for (let i = 12; i < monthEnd.length; i++) {
+    const x = (monthEnd[i].v / monthEnd[i - 12].v - 1) * 100;
+    if (worst12 === null || x < worst12) {
+      worst12 = x;
+      worst12End = monthEnd[i].ym;
+    }
+  }
+  const wm = r.monthly.reduce<{ ym: string; retPct: number } | null>((a, m) => (!a || m.retPct < a.retPct ? m : a), null);
+  const full = r.annual.filter((a) => !a.partial).map((a) => a.retPct);
+  const mean = full.reduce((a, b) => a + b, 0) / (full.length || 1);
+  return {
+    worst12mPct: worst12,
+    worst12mEnd: worst12End,
+    worstMonthPct: wm?.retPct ?? null,
+    worstMonth: wm?.ym ?? null,
+    recoveryDays: r.mddPeak && r.mddRecovery ? dayDiff(r.mddPeak, r.mddRecovery) : null,
+    underwaterDays: r.mddPeak && !r.mddRecovery ? dayDiff(r.mddPeak, r.end) : null,
+    annualStdPct: full.length >= 2 ? Math.sqrt(full.reduce((a, b) => a + (b - mean) ** 2, 0) / (full.length - 1)) : null,
+  };
+}
+
+export interface FairnessItem {
+  label: string;
+  status: "ok" | "warn" | "fail";
+  detail: string;
+}
+
+/**
+ * 비교의 공정성 점검: 같은 기간·조건인지, 데이터가 충분한지, 결과를 왜곡할 수 있는 조건이 있는지
+ * leveraged: 레버리지 종목 기호 목록 (설정 파일 기준)
+ */
+export function fairnessCheck(results: BacktestResult[], opts: { leveraged: string[]; normalized: boolean }): { items: FairnessItem[]; comparable: boolean } {
+  const items: FairnessItem[] = [];
+  if (!results.length) return { items, comparable: false };
+  const r0 = results[0];
+  const samePeriod = results.every((r) => r.start === r0.start && r.end === r0.end);
+  items.push({ label: "같은 시작일·종료일", status: samePeriod ? "ok" : "fail", detail: samePeriod ? `${r0.start} ~ ${r0.end}` : results.map((r) => `${r.start}~${r.end}`).join(" / ") });
+  const keys: (keyof BacktestConfig)[] = ["initial", "monthly", "timing", "reinvest", "costPct", "taxPct", "riskFreePct"];
+  const sameCfg = results.every((r) => keys.every((k) => r.config[k] === r0.config[k]) && Boolean(r.config.capitalGains) === Boolean(r0.config.capitalGains));
+  items.push({ label: "같은 투자금·납입·재투자·비용·세금 가정", status: sameCfg ? "ok" : "fail", detail: sameCfg ? `초기 ${r0.config.initial} · 매월 ${r0.config.monthly} · 재투자 ${r0.config.reinvest ? "예" : "아니오"} · 비용 ${r0.config.costPct}% · 세금 ${r0.config.taxPct}%` : "포트폴리오마다 조건이 다름" });
+  const rebal = new Set(results.map((r) => (r.holdings.length > 1 ? r.config.rebalance : "single")));
+  rebal.delete("single");
+  items.push({ label: "같은 리밸런싱 주기", status: rebal.size <= 1 ? "ok" : "warn", detail: rebal.size <= 1 ? "여러 종목 포트폴리오는 같은 주기 (한 종목은 리밸런싱 해당 없음)" : "포트폴리오마다 리밸런싱 주기가 다름" });
+  const months = Math.round(r0.years * 12);
+  items.push({ label: "비교 기간 길이", status: r0.years >= 5 ? "ok" : r0.years >= 3 ? "warn" : "fail", detail: `${r0.years.toFixed(1)}년 (${months}개월). ${r0.years < 3 ? "3년 미만은 한 시장 국면만 반영해 순위가 쉽게 뒤집힙니다." : r0.years < 5 ? "5년 미만은 하락장·상승장을 모두 담지 못할 수 있습니다." : "여러 시장 국면을 담을 만한 길이"}` });
+  const worstMdd = Math.min(...results.map((r) => r.mddPct));
+  items.push({ label: "하락장 포함 여부", status: worstMdd <= -20 ? "ok" : "warn", detail: worstMdd <= -20 ? `기간 중 가장 큰 낙폭 ${worstMdd.toFixed(1)}% — 하락 구간을 거친 비교` : `가장 큰 낙폭이 ${worstMdd.toFixed(1)}%뿐이라 큰 하락장에서의 차이는 보이지 않습니다` });
+  const lev = [...new Set(results.flatMap((r) => r.holdings.map((h) => h.symbol)).filter((s) => opts.leveraged.includes(s)))];
+  if (lev.length) items.push({ label: "레버리지 ETF", status: worstMdd <= -30 && r0.years >= 5 ? "warn" : "fail", detail: `${lev.join(", ")} 포함 — 일일 배수 구조라 기간·경로에 따라 결과가 크게 달라집니다. ${worstMdd <= -30 && r0.years >= 5 ? "큰 하락을 포함한 기간이지만 다른 기간에는 결과가 달라질 수 있습니다." : "짧거나 큰 하락이 없는 기간이면 레버리지 쪽이 지나치게 유리하게 보입니다."}` });
+  items.push({ label: "상장 전 데이터·분할·분배금 처리", status: "ok", detail: "상장 전 기간은 계산하지 않고, 분할만 반영한 종가 + 배당락일 분배금으로 한 번만 계산 (수정주가와 중복 없음)" });
+  if (opts.normalized) items.push({ label: "비중 자동 정규화", status: "warn", detail: "입력 비중 합계가 100%가 아니어서 비율대로 맞췄습니다" });
+  // 기간·조건이 같아야 순위를 매길 수 있다 (나머지 항목은 결과 신뢰도에 대한 주의)
+  return { items, comparable: samePeriod && sameCfg };
 }

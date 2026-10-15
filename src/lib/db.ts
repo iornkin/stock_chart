@@ -100,6 +100,12 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
 
+-- ETF 구성 기록 (제공처는 지금 구성만 주므로 갱신할 때마다 직접 쌓는다)
+CREATE TABLE IF NOT EXISTS etf_composition (
+  symbol TEXT NOT NULL, date TEXT NOT NULL, data TEXT NOT NULL, source TEXT, checked_at INTEGER NOT NULL,
+  PRIMARY KEY (symbol, date)
+);
+
 CREATE TABLE IF NOT EXISTS macro (
   series TEXT NOT NULL, date TEXT NOT NULL, value REAL, source TEXT,
   PRIMARY KEY (series, date)

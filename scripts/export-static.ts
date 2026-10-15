@@ -12,6 +12,7 @@ import { delayLabel, getQuotes } from "@/lib/data/quotes";
 import { loadCompareInput } from "@/lib/compare";
 import { buildIncomeMap, buildSeries, seriesSymbols } from "@/lib/data/series";
 import { buildExposureMap } from "@/lib/data/exposure";
+import { buildEtfHistoryMap } from "@/lib/data/etf-history";
 import { encodeSeries, seriesFileKey } from "@/lib/sim/series";
 import { availableBriefingDates, briefingHistory, briefingsForDate, latestBriefingRecords, readBriefing } from "@/lib/briefing/store";
 import type { MarketBriefing, SessionType, SymbolBriefing } from "@/lib/briefing/types";
@@ -165,6 +166,7 @@ async function main() {
   for (const s of seriesSymbols()) write(`series/${seriesFileKey(s)}.json`, encodeSeries(buildSeries(s)));
   write("income.json", { asOf: started, items: buildIncomeMap() });
   write("exposure.json", { asOf: started, items: buildExposureMap() });
+  write("exposure-history.json", { asOf: started, items: buildEtfHistoryMap() });
   exportBriefings();
 
   const schedule = getSchedule();

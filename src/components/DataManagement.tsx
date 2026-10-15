@@ -98,7 +98,7 @@ export default function DataManagement() {
   };
 
   const reset = async () => {
-    if (!window.confirm("내 자산·거래 내역·전략·계산 결과·알림 규칙·관심 종목·화면 설정을 모두 지웁니다. 되돌릴 수 없습니다. 계속할까요?")) return;
+    if (!window.confirm("내 자산·거래 내역·전략·계산 결과·알림 규칙·투자 기록·관심 종목·화면 설정을 모두 지웁니다. 되돌릴 수 없습니다. 계속할까요?")) return;
     if (!window.confirm("정말 모두 지울까요? 필요하면 먼저 백업 파일을 내려받으세요.")) return;
     await resetAll();
     setMsg({ ok: true, text: "모든 개인 데이터를 지웠습니다. 화면을 새로 불러옵니다…" });
@@ -110,7 +110,7 @@ export default function DataManagement() {
       <section id="data" className="card flex scroll-mt-20 flex-col gap-4 p-5">
         <h2 className="font-semibold">데이터 관리 (내보내기·불러오기·백업)</h2>
         <p className="text-sm text-ink-2">
-          내 자산, 거래 내역, 전략, 계산 결과, 알림 규칙·기록, 관심 종목과 화면 설정은 <b>이 브라우저에만</b> 저장됩니다. 브라우저의 사이트 데이터(쿠키·저장소)를 지우거나 다른 기기·브라우저로 옮기면 보이지 않으니 백업 파일로 옮기세요.
+          내 자산, 거래 내역, 전략, 계산 결과, 알림 규칙·기록, 투자 판단 기록, 관심 종목과 화면 설정은 <b>이 브라우저에만</b> 저장됩니다. 브라우저의 사이트 데이터(쿠키·저장소)를 지우거나 다른 기기·브라우저로 옮기면 보이지 않으니 백업 파일로 옮기세요.
         </p>
         <dl className="text-xs text-ink-2">
           <div>

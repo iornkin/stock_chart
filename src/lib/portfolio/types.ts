@@ -34,6 +34,8 @@ export interface Txn {
   /** 거래 당시 환율 (원/달러) — 선택 */
   fx?: number | null;
   memo?: string;
+  /** CSV 가져오기로 들어온 거래의 묶음 표시 (한 번에 되돌리기용) */
+  importBatch?: string;
   createdAt: number;
 }
 

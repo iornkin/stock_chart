@@ -43,6 +43,10 @@ export interface FutureMonth {
   ym: string;
   value: number;
   contributed: number;
+  /** 그 달 추가 납입금 */
+  contribution: number;
+  /** 그 달 가격 변화 손익 */
+  priceGainMonth: number;
   /** 누적 가격 변화 손익 */
   priceGain: number;
   /** 그 달 분배금 (세전·세후) */
@@ -64,7 +68,38 @@ export interface FutureResult {
   annualIncome: { year: number; gross: number; net: number; months: number }[];
   /** 마지막 12개월(또는 전체) 월평균 세후 분배금 */
   avgMonthlyIncomeNet: number;
-  perHolding: { symbol: string; value: number; incomeGross: number }[];
+  perHolding: FutureHoldingResult[];
+  /** 연도별 상세 (기간 첫해·마지막 해는 일부 개월일 수 있음) */
+  yearly: FutureYear[];
+  /** 거래 비용 합계 */
+  costs: number;
+}
+
+export interface FutureHoldingResult {
+  symbol: string;
+  /** 기간 말 평가금액 */
+  value: number;
+  incomeGross: number;
+  incomeNet: number;
+  /** 연도별 분배금 (세전·세후) */
+  years: { year: number; gross: number; net: number }[];
+}
+
+export interface FutureYear {
+  year: number;
+  months: number;
+  startValue: number;
+  contributions: number;
+  priceGain: number;
+  incomeGross: number;
+  incomeTax: number;
+  incomeNet: number;
+  /** 재투자한 세후 분배금 (현금 수령이면 0) */
+  reinvested: number;
+  costs: number;
+  endValue: number;
+  /** 연말 누적 납입 원금 */
+  contributed: number;
 }
 
 function nextYm(ym: string, add: number): string {
@@ -99,7 +134,7 @@ function stepMonth(
   v: number[],
   priceRet: number[],
   divYield: number[],
-  st: { cash: number; costs: number; priceGain: number; incGross: number[]; incNet: number },
+  st: { cash: number; costs: number; priceGain: number; incGross: number[]; incNetBy: number[]; incNet: number },
   cfg: FutureConfig,
 ) {
   const cost = cfg.costPct / 100;
@@ -118,6 +153,7 @@ function stepMonth(
       gross += dist;
       net += n;
       st.incGross[s] += dist;
+      st.incNetBy[s] += n;
       if (cfg.reinvest) {
         v[s] += n * (1 - cost);
         st.costs += n * cost;
@@ -149,17 +185,33 @@ export function runFuture(cfg: FutureConfig): FutureResult {
   const k = cfg.holdings.length;
   const w = cfg.holdings.map((h) => h.weight / 100);
   const v = new Array<number>(k).fill(0);
-  const st = { cash: 0, costs: 0, priceGain: 0, incGross: new Array<number>(k).fill(0), incNet: 0 };
+  const st = { cash: 0, costs: 0, priceGain: 0, incGross: new Array<number>(k).fill(0), incNetBy: new Array<number>(k).fill(0), incNet: 0 };
   contribute(v, w, cfg.initial, cfg, st);
   let contributed = cfg.initial;
   const monthsOut: FutureMonth[] = [];
   const mPrice = cfg.holdings.map((h) => Math.pow(1 + h.priceReturnPct / 100, 1 / 12) - 1);
+  const yearly = new Map<number, FutureYear>();
+  const symYear = cfg.holdings.map(() => new Map<number, { gross: number; net: number }>());
+  let prevValue = v.reduce((a, b) => a + b, 0);
   for (let m = 0; m < cfg.months; m++) {
     const ym = nextYm(cfg.startYm, m);
+    const year = Number(ym.slice(0, 4));
     const cal = Number(ym.slice(5, 7)) - 1;
+    const y =
+      yearly.get(year) ??
+      (yearly
+        // 첫해는 초기 투자금을 납입으로 보고 시작 평가금액 0 에서 출발 (평가금액 변화 = 납입 + 가격 변화 + 세후 분배금 − 비용)
+        .set(year, { year, months: 0, startValue: m === 0 ? 0 : prevValue, contributions: m === 0 ? cfg.initial : 0, priceGain: 0, incomeGross: 0, incomeTax: 0, incomeNet: 0, reinvested: 0, costs: m === 0 ? st.costs : 0, endValue: 0, contributed: 0 })
+        .get(year) as FutureYear);
+    const costs0 = st.costs;
+    const price0 = st.priceGain;
+    const gross0 = [...st.incGross];
+    const net0 = [...st.incNetBy];
+    let contribution = 0;
     if (cfg.monthly > 0 && cfg.timing === "start" && m > 0) {
       contribute(v, w, cfg.monthly, cfg, st);
       contributed += cfg.monthly;
+      contribution += cfg.monthly;
     }
     if (rebalanceDue(cfg.rebalance, m)) rebalance(v, w, cfg, st);
     const dy = cfg.holdings.map((h) => {
@@ -170,8 +222,29 @@ export function runFuture(cfg: FutureConfig): FutureResult {
     if (cfg.monthly > 0 && cfg.timing === "end") {
       contribute(v, w, cfg.monthly, cfg, st);
       contributed += cfg.monthly;
+      contribution += cfg.monthly;
     }
-    monthsOut.push({ ym, value: v.reduce((a, b) => a + b, 0) + st.cash, contributed, priceGain: st.priceGain, incomeGross: r.gross, incomeNet: r.net, cash: st.cash });
+    const value = v.reduce((a, b) => a + b, 0) + st.cash;
+    monthsOut.push({ ym, value, contributed, contribution, priceGainMonth: st.priceGain - price0, priceGain: st.priceGain, incomeGross: r.gross, incomeNet: r.net, cash: st.cash });
+    y.months += 1;
+    y.contributions += contribution;
+    y.priceGain += st.priceGain - price0;
+    y.incomeGross += r.gross;
+    y.incomeNet += r.net;
+    y.incomeTax += r.gross - r.net;
+    if (cfg.reinvest) y.reinvested += r.net;
+    y.costs += st.costs - costs0;
+    y.endValue = value;
+    y.contributed = contributed;
+    for (let i = 0; i < k; i++) {
+      const g = st.incGross[i] - gross0[i];
+      if (g <= 0) continue;
+      const e = symYear[i].get(year) ?? { gross: 0, net: 0 };
+      e.gross += g;
+      e.net += st.incNetBy[i] - net0[i];
+      symYear[i].set(year, e);
+    }
+    prevValue = value;
   }
   const finalValue = monthsOut[monthsOut.length - 1]?.value ?? cfg.initial;
   const byYear = new Map<number, { gross: number; net: number; months: number }>();
@@ -195,7 +268,15 @@ export function runFuture(cfg: FutureConfig): FutureResult {
     incomeNetTotal: st.incNet,
     annualIncome: [...byYear.entries()].map(([year, e]) => ({ year, ...e })),
     avgMonthlyIncomeNet: tail.length ? tail.reduce((a, m) => a + m.incomeNet, 0) / tail.length : 0,
-    perHolding: cfg.holdings.map((h, s) => ({ symbol: h.symbol, value: v[s], incomeGross: st.incGross[s] })),
+    perHolding: cfg.holdings.map((h, i) => ({
+      symbol: h.symbol,
+      value: v[i],
+      incomeGross: st.incGross[i],
+      incomeNet: st.incNetBy[i],
+      years: [...symYear[i].entries()].sort((a, b) => a[0] - b[0]).map(([year, e]) => ({ year, ...e })),
+    })),
+    yearly: [...yearly.values()],
+    costs: st.costs,
   };
 }
 
@@ -210,7 +291,7 @@ export const SCENARIO_KO: Record<ScenarioKey, string> = {
 };
 
 /** 계산용 기본 가정 (예측값이 아님) — 화면에서 바꿀 수 있다 */
-export const DEFAULT_TOTAL_RETURN: Record<ScenarioKey, number> = { conservative: 2, neutral: 5, optimistic: 8 };
+export const DEFAULT_TOTAL_RETURN: Record<ScenarioKey, number> = { conservative: 4, neutral: 7, optimistic: 10 };
 
 export type AssumptionMode = "total" | "price";
 
@@ -227,6 +308,86 @@ export function scenarioHoldings(base: { symbol: string; weight: number; yieldPc
     priceReturnPct: mode === "total" ? rate - b.yieldPct : rate,
     monthWeights: b.monthWeights,
   }));
+}
+
+/** 종목별 과거 실적: 일정 기간(기본 5년) 이동 구간 총수익률(분배금 재투자)의 연환산 분포 */
+export interface HistoricalReturn {
+  symbol: string;
+  from: string;
+  to: string;
+  years: number;
+  /** 전체 기간 총수익률 연환산 (%) */
+  totalCagr: number;
+  windowYears: number;
+  /** 이동 구간 개수 (월 단위로 한 칸씩 이동) */
+  windows: number;
+  p25: number;
+  p50: number;
+  p75: number;
+  worst: number;
+  best: number;
+}
+
+/** 월말 총수익 지수 (배당락일 종가로 분배금 재투자) */
+export function monthEndTotalReturn(s: PriceSeries): { ym: string; date: string; value: number }[] {
+  const divBy = new Map<string, number>();
+  for (const d of s.divs) divBy.set(d.ex, (divBy.get(d.ex) ?? 0) + d.amount);
+  const out: { ym: string; date: string; value: number }[] = [];
+  let idx = 1;
+  let di = 0;
+  const exs = [...divBy.keys()].sort();
+  for (let i = 0; i < s.dates.length; i++) {
+    if (i > 0) {
+      let div = 0;
+      while (di < exs.length && exs[di] <= s.dates[i]) {
+        if (exs[di] > s.dates[i - 1]) div += divBy.get(exs[di]) as number;
+        di++;
+      }
+      idx *= (s.close[i] + div) / s.close[i - 1];
+    } else while (di < exs.length && exs[di] <= s.dates[0]) di++;
+    const ym = s.dates[i].slice(0, 7);
+    if (out.length && out[out.length - 1].ym === ym) out[out.length - 1] = { ym, date: s.dates[i], value: idx };
+    else out.push({ ym, date: s.dates[i], value: idx });
+  }
+  return out;
+}
+
+/** 최근 N년(null 이면 전체) 총수익률(분배금 재투자) 연환산 — 참고값 표시용 */
+export function totalReturnCagr(s: PriceSeries, years: number | null): { pct: number; from: string; to: string } | null {
+  const me = monthEndTotalReturn(s);
+  if (me.length < 13) return null;
+  const last = me[me.length - 1];
+  const i = years ? Math.max(0, me.length - 1 - Math.round(years * 12)) : 0;
+  const y = (Date.parse(last.date) - Date.parse(me[i].date)) / (365.25 * 86400000);
+  if (y < 1 || (years && y < years - 0.2)) return null;
+  return { pct: (Math.pow(last.value / me[i].value, 1 / y) - 1) * 100, from: me[i].date, to: last.date };
+}
+
+export function historicalReturnStats(s: PriceSeries, windowYears = 5): HistoricalReturn | { error: string } {
+  if (s.dates.length < 40) return { error: "일봉 데이터가 부족합니다." };
+  const me = monthEndTotalReturn(s);
+  const W = Math.round(windowYears * 12);
+  const cagrs: number[] = [];
+  for (let i = 0; i + W < me.length; i++) cagrs.push((Math.pow(me[i + W].value / me[i].value, 1 / windowYears) - 1) * 100);
+  const years = (Date.parse(s.dates[s.dates.length - 1]) - Date.parse(s.dates[0])) / (365.25 * 86400000);
+  if (cagrs.length < 12) return { error: `데이터가 ${years.toFixed(1)}년치라 ${windowYears}년 이동 구간을 12개 이상 만들 수 없습니다.` };
+  const sorted = [...cagrs].sort((a, b) => a - b);
+  const first = me[0];
+  const last = me[me.length - 1];
+  return {
+    symbol: s.symbol,
+    from: s.dates[0],
+    to: s.dates[s.dates.length - 1],
+    years,
+    totalCagr: (Math.pow(last.value / first.value, 1 / Math.max(years, 1e-9)) - 1) * 100,
+    windowYears,
+    windows: cagrs.length,
+    p25: quantile(sorted, 0.25),
+    p50: quantile(sorted, 0.5),
+    p75: quantile(sorted, 0.75),
+    worst: sorted[0],
+    best: sorted[sorted.length - 1],
+  };
 }
 
 // ─────────────────────────────── 몬테카를로 ───────────────────────────────
@@ -290,6 +451,11 @@ export interface MonteCarloConfig extends Omit<FutureConfig, "holdings"> {
   /** 연속된 몇 개월을 한 묶음으로 뽑을지 (추세·변동성 군집을 일부 보존) */
   blockMonths: number;
   seed: number;
+  /**
+   * 평균 조정: null 이면 과거 월별 수익률을 그대로 쓴다.
+   * 숫자(연 %)를 주면 종목마다 월별 총수익률의 평균만 그 값(기하 평균 기준)에 맞추고, 변동성·분포 모양·종목 간 움직임은 과거 그대로 둔다.
+   */
+  centerAnnualPct?: number | null;
 }
 
 export interface MonteCarloResult {
@@ -307,9 +473,65 @@ export interface MonteCarloResult {
   /** 경로별 최대 낙폭(시간가중, 월말 기준)의 중앙값(%) */
   medianMddPct: number;
   history: { first: string; last: string; count: number };
+  /** 경로별 연환산 수익률(시간가중, 납입 영향 제외) 분위수(%) — 12개월 미만이면 누적 수익률 */
+  cagr: { p5: number; p25: number; p50: number; p75: number; p95: number; annualized: boolean };
+  /** 매년 말(마지막 달 포함) 평가금액 분위수 */
+  yearEnd: { month: number; ym: string; contributed: number; p5: number; p25: number; p50: number; p75: number; p95: number }[];
+  /** 오름차순 최종 평가금액 (목표 달성 확률 계산용) */
+  finalsSorted: number[];
+  /** 마지막 12개월(기간이 짧으면 전체) 세후 분배금의 월평균 분위수 */
+  lastYearMonthlyIncome: { p5: number; p50: number; p95: number };
+  /** 종목별 세후 분배금 합계 중앙값 */
+  incomeBySymbol: { symbol: string; p50: number }[];
+  /** 뽑는 데 쓴 과거 표본 자체의 성과 (월별 리밸런싱 근사) */
+  sample: { annualPct: number; volPct: number; mddPct: number; worst12mPct: number | null; months: number };
+  /** 평균 조정을 했다면 목표 연 수익률(%) */
+  centeredAt: number | null;
 }
 
-export function runMonteCarlo(cfg: MonteCarloConfig, hist: MonthlyHistory): MonteCarloResult | { error: string } {
+/** 과거 표본 포트폴리오(매달 목표 비중으로 맞춘다고 근사)의 연 수익률·변동성·낙폭 */
+function sampleStats(hist: MonthlyHistory, w: number[]) {
+  const n = hist.months.length;
+  const r: number[] = [];
+  for (let i = 0; i < n; i++) r.push(w.reduce((a, wk, k) => a + wk * (hist.price[k][i] + hist.income[k][i]), 0));
+  let g = 1;
+  let peak = 1;
+  let mdd = 0;
+  const cum = [1];
+  for (const x of r) {
+    g *= 1 + x;
+    cum.push(g);
+    peak = Math.max(peak, g);
+    mdd = Math.min(mdd, g / peak - 1);
+  }
+  const mean = r.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(r.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, n - 1));
+  let worst: number | null = null;
+  for (let i = 0; i + 12 < cum.length; i++) {
+    const x = (cum[i + 12] / cum[i] - 1) * 100;
+    worst = worst === null ? x : Math.min(worst, x);
+  }
+  return { annualPct: (Math.pow(g, 12 / n) - 1) * 100, volPct: sd * Math.sqrt(12) * 100, mddPct: mdd * 100, worst12mPct: worst, months: n };
+}
+
+/** 종목별 월 총수익률 평균을 목표 연 수익률(기하 평균 기준)에 맞춘 가격 수익률 (분배금 수익률은 그대로) */
+export function centerHistory(hist: MonthlyHistory, annualPct: number): MonthlyHistory {
+  const target = Math.pow(1 + annualPct / 100, 1 / 12) - 1;
+  const price = hist.price.map((pr, k) => {
+    const tot = pr.map((x, i) => x + hist.income[k][i]);
+    const mean = tot.reduce((a, b) => a + b, 0) / tot.length;
+    const varc = tot.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, tot.length - 1);
+    // 산술 평균 ≈ 기하 평균 + 분산/2 → 기하 기준으로 목표에 맞춘다
+    const shift = target + varc / 2 - mean;
+    return pr.map((x) => Math.max(-0.99, x + shift));
+  });
+  return { ...hist, price };
+}
+
+export function runMonteCarlo(cfg: MonteCarloConfig, rawHist: MonthlyHistory): MonteCarloResult | { error: string } {
+  const centered = cfg.centerAnnualPct !== undefined && cfg.centerAnnualPct !== null && Number.isFinite(cfg.centerAnnualPct) ? cfg.centerAnnualPct : null;
+  if (centered !== null && !(centered > -50 && centered < 50)) return { error: "평균 조정 수익률은 −50%~50% 사이로 정하세요." };
+  const hist = centered !== null ? centerHistory(rawHist, centered) : rawHist;
   const n = hist.months.length;
   if (n < MC_MIN_MONTHS) return { error: `모든 종목에 공통으로 있는 월 데이터가 ${n}개월뿐입니다. 최소 ${MC_MIN_MONTHS}개월이 필요해 몬테카를로 시뮬레이션을 실행하지 않습니다.` };
   if (cfg.paths < 100 || cfg.paths > 5000) return { error: "경로 수는 100~5000 사이로 정하세요." };
@@ -322,11 +544,15 @@ export function runMonteCarlo(cfg: MonteCarloConfig, hist: MonthlyHistory): Mont
   const finals: number[] = [];
   const incomes: number[] = [];
   const mdds: number[] = [];
+  const cagrs: number[] = [];
+  const lastYearInc: number[] = [];
+  const symInc: number[][] = cfg.holdings.map(() => []);
   const contributed: number[] = [];
+  const tailFrom = Math.max(0, H - 12);
   const fcfg: FutureConfig = { ...cfg, holdings: cfg.holdings.map((h) => ({ ...h, priceReturnPct: 0, yieldPct: 0 })) };
   for (let p = 0; p < cfg.paths; p++) {
     const v = new Array<number>(k).fill(0);
-    const st = { cash: 0, costs: 0, priceGain: 0, incGross: new Array<number>(k).fill(0), incNet: 0 };
+    const st = { cash: 0, costs: 0, priceGain: 0, incGross: new Array<number>(k).fill(0), incNetBy: new Array<number>(k).fill(0), incNet: 0 };
     contribute(v, w, cfg.initial, fcfg, st);
     let contrib = cfg.initial;
     let pos = 0;
@@ -335,6 +561,7 @@ export function runMonteCarlo(cfg: MonteCarloConfig, hist: MonthlyHistory): Mont
     let twr = 1;
     let peak = 1;
     let mdd = 0;
+    let tailInc = 0;
     for (let m = 0; m < H; m++) {
       if (left === 0) {
         pos = Math.floor(rand() * (n - block + 1));
@@ -350,13 +577,14 @@ export function runMonteCarlo(cfg: MonteCarloConfig, hist: MonthlyHistory): Mont
         flowStart = cfg.monthly;
       }
       if (rebalanceDue(cfg.rebalance, m)) rebalance(v, w, fcfg, st);
-      stepMonth(
+      const step = stepMonth(
         v,
         hist.price.map((r) => r[idx]),
         hist.income.map((r) => r[idx]),
         st,
         fcfg,
       );
+      if (m >= tailFrom) tailInc += step.net;
       if (cfg.monthly > 0 && cfg.timing === "end") {
         contribute(v, w, cfg.monthly, fcfg, st);
         contrib += cfg.monthly;
@@ -375,6 +603,9 @@ export function runMonteCarlo(cfg: MonteCarloConfig, hist: MonthlyHistory): Mont
     finals.push(vals[H - 1][p]);
     incomes.push(st.incNet);
     mdds.push(mdd * 100);
+    cagrs.push(H >= 12 ? (Math.pow(twr, 12 / H) - 1) * 100 : (twr - 1) * 100);
+    lastYearInc.push(tailInc / Math.min(12, H));
+    st.incNetBy.forEach((x, k) => symInc[k].push(x));
   }
   const totalContributed = contributed[contributed.length - 1] ?? cfg.initial;
   const bands = { p5: [] as number[], p25: [] as number[], p50: [] as number[], p75: [] as number[], p95: [] as number[] };
@@ -389,6 +620,11 @@ export function runMonteCarlo(cfg: MonteCarloConfig, hist: MonthlyHistory): Mont
   const fs = [...finals].sort((a, b) => a - b);
   const is = [...incomes].sort((a, b) => a - b);
   const ms = [...mdds].sort((a, b) => a - b);
+  const cs = [...cagrs].sort((a, b) => a - b);
+  const ls = [...lastYearInc].sort((a, b) => a - b);
+  const yearEnd: MonteCarloResult["yearEnd"] = [];
+  for (let m = 11; m < H; m += 12) yearEnd.push({ month: m + 1, ym: nextYm(cfg.startYm, m), contributed: contributed[m], p5: bands.p5[m], p25: bands.p25[m], p50: bands.p50[m], p75: bands.p75[m], p95: bands.p95[m] });
+  if (!yearEnd.length || yearEnd[yearEnd.length - 1].month !== H) yearEnd.push({ month: H, ym: nextYm(cfg.startYm, H - 1), contributed: contributed[H - 1], p5: bands.p5[H - 1], p25: bands.p25[H - 1], p50: bands.p50[H - 1], p75: bands.p75[H - 1], p95: bands.p95[H - 1] });
   return {
     paths: cfg.paths,
     months: Array.from({ length: H }, (_, m) => nextYm(cfg.startYm, m)),
@@ -400,7 +636,27 @@ export function runMonteCarlo(cfg: MonteCarloConfig, hist: MonthlyHistory): Mont
     income: { p5: quantile(is, 0.05), p50: quantile(is, 0.5), p95: quantile(is, 0.95) },
     medianMddPct: quantile(ms, 0.5),
     history: { first: hist.first, last: hist.last, count: n },
+    cagr: { p5: quantile(cs, 0.05), p25: quantile(cs, 0.25), p50: quantile(cs, 0.5), p75: quantile(cs, 0.75), p95: quantile(cs, 0.95), annualized: H >= 12 },
+    yearEnd,
+    finalsSorted: fs,
+    lastYearMonthlyIncome: { p5: quantile(ls, 0.05), p50: quantile(ls, 0.5), p95: quantile(ls, 0.95) },
+    incomeBySymbol: cfg.holdings.map((h, k) => ({ symbol: h.symbol, p50: quantile([...symInc[k]].sort((a, b) => a - b), 0.5) })),
+    sample: sampleStats(rawHist, w),
+    centeredAt: centered,
   };
+}
+
+/** 최종 평가금액이 목표 이상인 경로 비율(%) */
+export function probAtLeast(finalsSorted: number[], target: number): number {
+  if (!finalsSorted.length) return NaN;
+  let lo = 0;
+  let hi = finalsSorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (finalsSorted[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return ((finalsSorted.length - lo) / finalsSorted.length) * 100;
 }
 
 /** 과거 실적으로 '가격 수익률' 가정을 채울 때 쓰는 값: 최근 N년(없으면 전체) 연환산 가격 수익률(%) */

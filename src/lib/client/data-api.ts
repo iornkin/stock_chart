@@ -9,6 +9,7 @@ import type { SymbolBriefing } from "@/lib/briefing/types";
 import { decodeSeries, seriesFileKey, type PriceSeries, type SeriesWire } from "@/lib/sim/series";
 import type { IncomeInfo } from "@/lib/sim/income";
 import type { ExposureResponse } from "@/lib/exposure-types";
+import type { EtfHistoryResponse } from "@/lib/etf-history";
 
 export async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url, IS_STATIC ? { cache: "no-cache" } : undefined);
@@ -101,6 +102,18 @@ export function fetchIncome(): Promise<IncomeResponse> {
     p.catch(() => (incomeCache = null));
   }
   return incomeCache.p;
+}
+
+let historyCache: { at: number; p: Promise<EtfHistoryResponse> } | null = null;
+
+/** ETF 구성 기록 (이 사이트가 갱신할 때마다 쌓은 기록) */
+export function fetchEtfHistory(): Promise<EtfHistoryResponse> {
+  if (!historyCache || Date.now() - historyCache.at > SUMMARY_TTL_MS) {
+    const p = getJson<EtfHistoryResponse>(IS_STATIC ? staticDataUrl("exposure-history.json") : "/api/exposure/history");
+    historyCache = { at: Date.now(), p };
+    p.catch(() => (historyCache = null));
+  }
+  return historyCache.p;
 }
 
 let exposureCache: { at: number; p: Promise<ExposureResponse> } | null = null;

@@ -9,6 +9,7 @@ import { readBarMeta, refreshBars } from "../data/bars";
 import { refreshDividendDetails } from "../data/dividends";
 import { collectMarketNews, collectSymbolNews } from "../data/news";
 import { refreshProfile, topHoldings } from "../data/profile";
+import { recordEtfComposition } from "../data/etf-history";
 import { refreshEarnings, refreshEconomicCalendar, refreshMacro } from "../data/events";
 import { buildSymbolBriefing } from "../briefing/symbol";
 import { buildMarketBriefing } from "../briefing/market";
@@ -124,6 +125,14 @@ async function jobCollectReference(ctx: JobContext): Promise<JobResult> {
   for (const s of ctx.symbols ?? allSymbols()) {
     try {
       const r = await refreshProfile(s, { maxAgeMs: ctx.force ? 0 : undefined });
+      // ETF 구성 기록 (제공처는 지금 구성만 주므로 직접 쌓는다)
+      if (getInstrument(s)?.kind === "etf") {
+        try {
+          recordEtfComposition(s);
+        } catch (e) {
+          ctx.log(`${s} 구성 기록 실패: ${(e as Error).message}`);
+        }
+      }
       if (r.errors.length && !r.done.length) failed.push({ symbol: s, error: r.errors.join(" / ") });
       else ok++;
     } catch (e) {

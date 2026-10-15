@@ -154,6 +154,8 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await tabs.getByRole("tab", { name: "노출 분석" }).click();
   t = await waitText(page, /종목까지 확인한 비율|편입 종목 자료를 불러오지 못했습니다/);
   check(`${P}노출 분석: 확인 비율·섹터·유형 (상위 편입 기준)`, t.includes("종목까지 확인한 비율") && t.includes("유형별 비중") && t.includes("상위 편입"));
+  t = await waitText(page, /ETF 구성 변화 \(기록 기준\)[\s\S]*(기록 \d+건|아직 기록 없음)/);
+  check(`${P}노출 분석: ETF 구성 변화 (이 사이트가 쌓은 기록끼리만 비교)`, t.includes("ETF 구성 변화 (기록 기준)") && t.includes("기록을 시작하기 전의 변화는 알 수 없어") && /기록 \d+건|아직 기록 없음/.test(t));
   await tabs.getByRole("tab", { name: "분배금" }).click();
   t = await waitText(page, "세후 분배금 (세율 가정별)");
   check(`${P}분배금: 세율 가정별 세후 비교·재투자 가정`, t.includes("15% (한·미 조세조약)") && t.includes("30% (조약 미적용)") && t.includes("세후 재투자 가정"));
@@ -161,6 +163,36 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await page.getByLabel("직접 입력 세율").fill("22");
   t = await waitText(page, "직접 입력 22%");
   check(`${P}분배금: 직접 입력한 세율로 계산`, t.includes("직접 입력 22%"));
+
+  // ── 변화 분석·데이터 점검·타임머신 (거래 내역 모드) ──
+  await tabs.getByRole("tab", { name: "변화 분석" }).click();
+  t = await waitText(page, /매매 시점 차이|분석하지 않았습니다/);
+  check(`${P}변화 분석: 가격 변화·매매 시점·입출금을 나눠 표시 (또는 분석 불가 사유)`, ((t.includes("가격 변화") && t.includes("매매 시점 차이")) || t.includes("분석하지 않았습니다")) && !/NaN|undefined/.test(t), t.slice(t.indexOf("변화 분석"), t.indexOf("변화 분석") + 160));
+  await page.getByRole("group", { name: "기간" }).getByRole("button", { name: "직접 선택" }).click();
+  check(`${P}변화 분석: 기간 직접 선택`, (await page.getByLabel("변화 분석 시작일").count()) === 1);
+  await tabs.getByRole("tab", { name: "데이터 점검" }).click();
+  t = await waitText(page, "점검 범위");
+  check(`${P}데이터 점검: 상태별 개수(오류 확정·확인 필요·데이터 부족·업데이트 지연·정상)`, ["오류 확정", "확인 필요", "데이터 부족", "업데이트 지연", "정상", "점검 범위"].every((x) => t.includes(x)) && !/NaN|undefined/.test(t));
+  await tabs.getByRole("tab", { name: "자산 추이" }).click();
+  t = await waitText(page, "타임머신 — 과거 날짜의 실제 보유 상태");
+  check(`${P}자산 추이: 타임머신 (두 날짜 비교)`, t.includes("타임머신") && (await page.getByLabel("타임머신 날짜 A").count()) === 1);
+
+  // ── CSV 가져오기: 열 자동 인식 → 검증 → 중복 제외 → 반영 전후 미리보기 → 확인 후 반영 → 되돌리기 ──
+  await tabs.getByRole("tab", { name: "거래 입력·내역" }).click();
+  await page.getByText("CSV 파일로 거래 내역 가져오기").click();
+  const csvPath = path.join(out, `${slug}-import.csv`);
+  fs.writeFileSync(csvPath, ["날짜,종류,티커,수량,가격,수수료,금액", "2026-01-05,입금,,,,,300", "2026-01-06,매수,QQQ,1,250,0,", "2026-01-06,매수,QQQ,1,250,0,", "2099-01-01,매수,QQQ,1,250,0,", "2026-01-07,매수,ZZZZ,1,10,0,"].join("\n"));
+  await page.getByLabel("가져올 CSV 파일").setInputFiles(csvPath);
+  t = await waitText(page, "건 반영");
+  check(`${P}CSV: 열 자동 인식·미래 날짜·지원 안 하는 종목 표시·파일 안 중복 제외`, t.includes("미래 날짜") && t.includes("ZZZZ") && t.includes("확인하고 2건 반영"), t.slice(t.indexOf("CSV"), t.indexOf("CSV") + 300));
+  check(`${P}CSV: 반영 전후 미리보기 (현금·보유 수량)`, t.includes("QQQ 7 → 8주") || /QQQ [\d.]+ → [\d.]+주/.test(t));
+  await page.getByRole("button", { name: "확인하고 2건 반영" }).click();
+  t = await waitText(page, "되돌리기 (2건)");
+  check(`${P}CSV: 반영 후 가져온 묶음 되돌리기 버튼`, t.includes("되돌리기 (2건)"));
+  await page.getByRole("button", { name: /되돌리기 \(2건\)/ }).click();
+  await page.waitForTimeout(500);
+  t = await waitText(page, money(value + cash));
+  check(`${P}CSV: 되돌리면 원래 총자산`, t.includes(money(value + cash)) && !t.includes("되돌리기 (2건)"));
 
   // ── 백테스트 ──
   await go("/backtest");
@@ -170,6 +202,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   t = await waitText(page, "4. 결과");
   check(`${P}백테스트: 두 포트폴리오·벤치마크 동일 조건 비교`, t.includes("최종 평가금액") && t.includes("연환산 수익률 (CAGR)") && t.includes("최대 낙폭") && t.includes("샤프 비율") && t.includes("벤치마크 대비 초과 총수익률"));
   check(`${P}백테스트: 분배금 재투자 효과·가격만 수익률 구분`, t.includes("재투자 효과") && t.includes("가격만의 수익률"));
+  check(`${P}백테스트: 종목별 분배금·회복 기간·최악의 기간·연도별 변동`, t.includes("└ 종목별 분배금 (세후)") && t.includes("최대 낙폭 회복 기간") && t.includes("최악의 12개월 / 최악의 달") && t.includes("연도별 수익률 변동"));
   const btTabs = page.getByRole("tablist", { name: "백테스트 결과" });
   await btTabs.getByRole("tab", { name: "자산 추이·낙폭" }).click();
   await page.waitForTimeout(500);
@@ -181,6 +214,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await btTabs.getByRole("tab", { name: "검증·재현" }).click();
   t = await waitText(page, "요청한 기간");
   check(`${P}백테스트: 검증·재현 (요청·실제 기간, 종목별 데이터, 재현 코드)`, t.includes("실제 계산 기간") && t.includes("종목별 데이터") && /데이터 코드 [0-9a-f]{8}/.test(t) && t.includes("한계"));
+  check(`${P}백테스트: 비교 공정성 점검 (같은 기간·조건·상장 전 데이터)`, t.includes("비교 공정성 점검") && /통과|주의|문제/.test(t));
   await page.getByRole("button", { name: "결과 저장 (대시보드에 표시)" }).click();
   await page.screenshot({ path: path.join(out, `${slug}-backtest.png`), fullPage: true });
   // 사용자가 입력한 날짜 그대로
@@ -224,10 +258,23 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   t = await waitText(page, "= 15개월");
   const after = t.match(/기간 종료 시 예상 자산 (\$[\d,]+)/)?.[1];
   check(`${P}미래: 기간 직접 입력 (15개월) 반영`, t.includes("15개월 뒤 기준") && before !== after, `${before} → ${after}`);
+  await page.getByLabel("포트폴리오 A 이름", { exact: true }).fill("내 배당 계획");
+  await page.getByLabel("포트폴리오 A 비중 1").fill("60");
+  await page.getByLabel("포트폴리오 A 비중 2").fill("40");
+  await page.waitForTimeout(300);
+  check(`${P}미래: 포트폴리오 이름 직접 입력 (비중을 바꿔도 유지)`, (await page.getByLabel("포트폴리오 A 이름", { exact: true }).inputValue()) === "내 배당 계획");
+  const scen = page.getByRole("tablist", { name: "시나리오 결과" });
+  await scen.getByRole("tab", { name: "분배금 (종목별)" }).click();
+  t = await waitText(page, "종목별");
+  check(`${P}미래: 분배금 종목별 (세전·세후, 연도별)`, /SCHD|JEPI|QQQ|DIVO|VOO/.test(t) && t.includes("세후") && !/NaN|undefined/.test(t));
+  await scen.getByRole("tab", { name: "연도별 상세" }).click();
+  t = await waitText(page, "월별 CSV");
+  check(`${P}미래: 연도별 상세 (시작·납입·가격·분배금·비용·끝) + CSV`, t.includes("월별 CSV") && t.includes("납입") && !/NaN|undefined/.test(t));
   await page.getByRole("tab", { name: "몬테카를로 (과거 수익률 분포)" }).click();
   await page.getByRole("button", { name: "몬테카를로 실행" }).click();
   t = await waitText(page, "원금 손실 확률");
   check(`${P}미래: 몬테카를로 분위수·손실 확률`, t.includes("중앙값") && t.includes("하위 5%") && t.includes("원금 손실 확률") && t.includes("사용한 과거 기간"));
+  check(`${P}미래: 몬테카를로 연환산 수익률 분포·목표 확률`, t.includes("연환산") && t.includes("목표") && !/NaN|undefined/.test(t));
   await page.screenshot({ path: path.join(out, `${slug}-simulate.png`), fullPage: true });
 
   // ── 스트레스 테스트 ──
@@ -240,6 +287,13 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await page.getByRole("tab", { name: "하락장" }).click();
   t = await waitText(page, "과거 실제 하락 구간", 20000);
   check(`${P}스트레스: 하락장 경로 계산·종목별 베타·과거 구간`, t.includes("지수가 하락하면") && t.includes("예상 손익률") && t.includes("베타") && t.includes("과거 실제 하락 구간"));
+  await page.getByRole("tab", { name: "위험 예산" }).click();
+  t = await waitText(page, "종목별 비중과 위험 요인", 20000);
+  check(`${P}위험 예산: 시나리오별 손실 vs 최대 손실 기준`, t.includes("시나리오별 예상 손실") && t.includes("기준 대비") && t.includes("기술주 전체 하락") && t.includes("장기 금리 상승") && t.includes("분배금 −30% + 시장 −20%") && t.includes("레버리지 ETF 급락"));
+  check(`${P}위험 예산: 종목별 변동성·베타·낙폭·위험 기여·금리 민감도`, t.includes("위험 기여") && t.includes("금리 +1%p 때") && t.includes("예측이 아니라 가정에 따른 계산") && !/NaN|undefined/.test(t));
+  await page.getByLabel("최대 손실 기준").fill("1");
+  t = await waitText(page, "기준을 넘습니다");
+  check(`${P}위험 예산: 기준을 낮추면 초과 표시`, t.includes("초과"));
   await page.screenshot({ path: path.join(out, `${slug}-stress.png`), fullPage: true });
 
   // ── 전략 ──
@@ -261,7 +315,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await page.getByRole("link", { name: "백테스트" }).first().click();
   await page.waitForURL(/backtest/);
   await page.waitForTimeout(800);
-  check(`${P}전략: 전략별 백테스트로 불러오기`, (await page.getByLabel("포트폴리오 A 이름").inputValue()) === "SCHD 50% + DIVO 50%");
+  check(`${P}전략: 전략별 백테스트로 불러오기`, (await page.getByLabel("포트폴리오 A 이름", { exact: true }).inputValue()) === "SCHD 50% + DIVO 50%");
 
   // ── 대시보드: 개인 영역 ──
   await go("/");
@@ -330,6 +384,30 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   t = await waitText(page, "(복사본)");
   check(`${P}복원: 전략도 복원`, t.includes("(복사본)"));
 
+  // ── 투자 판단 기록장 ──
+  await go("/journal");
+  await waitText(page, "새 기록");
+  await page.getByLabel("기록 종목").fill("QQQ");
+  await page.getByLabel("기록 날짜").fill("2026-03-02");
+  await page.getByLabel("투자 이유").fill("장기 성장 기대 (e2e 테스트)");
+  await page.getByLabel("감수할 손실").fill("15");
+  await page.getByLabel("다시 볼 날짜").fill("2026-06-01");
+  await page.getByRole("button", { name: "기록 저장" }).click();
+  t = await waitText(page, "기록 후 최대 하락", 20000);
+  check(`${P}투자 기록: 원래 기록 보존 + 기록 이후 실제 가격·낙폭`, t.includes("장기 성장 기대 (e2e 테스트)") && t.includes("이 내용은 고치지 않습니다") && t.includes("기록 후 최대 하락") && t.includes("(지남)") && !/NaN|undefined/.test(t), t.slice(t.indexOf("기록 이후"), t.indexOf("기록 이후") + 200));
+
+  // ── 투자 보고서 ──
+  await go("/report");
+  t = await waitText(page, "다음 검토 때 확인할 것", 20000);
+  check(`${P}보고서: 11개 항목·인쇄`, ["전체 자산 현황", "투자 원금과 평가금액", "기간별 수익률", "종목별 수익 기여도", "자산 배분", "ETF 중복 노출", "배당·분배금 수령 현황", "데이터 오류·확인 사항", "주요 위험 요인", "재검토할 투자 기록", "다음 검토 때 확인할 것"].every((x) => t.includes(x)) && t.includes("인쇄 / PDF 로 저장") && !/NaN|undefined/.test(t));
+  check(`${P}보고서: 재검토할 기록에 지난 투자 기록 포함`, t.includes("QQQ 2026-03-02 기록 — 다시 볼 날 2026-06-01 지남"));
+  await page.screenshot({ path: path.join(out, `${slug}-report.png`), fullPage: true });
+
+  // ── 목표 역산 ──
+  await go("/income/target");
+  t = await waitText(page, "4. 목표 달성 계획", 20000);
+  check(`${P}목표 계산: 기간·월 투자 역산·시나리오`, t.includes("4. 목표 달성 계획 (기간·월 투자)") && !/NaN|undefined/.test(t));
+
   // ── 알림 (이 브라우저에서만) ──
   await go("/alerts");
   await waitText(page, "규칙 추가");
@@ -339,12 +417,15 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await page.getByRole("button", { name: "추가", exact: true }).click();
   t = await waitText(page, "QQQ 가격 이상 도달");
   check(`${P}알림: 규칙 추가 → 사이트 안에서 확인·기록`, t.includes("QQQ 가격 이상 도달") && t.includes("지원하지 않습니다"));
-  check(`${P}알림: 머리글 읽지 않은 알림 수`, ((await page.locator('header a[href*="/alerts"]').first().getAttribute("aria-label")) ?? "").includes("1개 읽지 않음"));
+  check(`${P}확인함: 확인할 일 (알림·데이터 점검·투자 기록) 한곳에`, /확인할 일 \d+건/.test(t));
+  const bell = (await page.locator('header a[href*="/alerts"]').first().getAttribute("aria-label")) ?? "";
+  check(`${P}알림: 머리글 읽지 않은 알림 수`, bell.includes("1개 읽지 않음"), bell);
+  check(`${P}확인함: 머리글에 다시 볼 투자 기록 수`, bell.includes("다시 볼 투자 기록 1건"), bell);
 
   // ── 모바일 가로 넘침 ──
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "ko-KR" });
   const m = await mctx.newPage();
-  for (const u of ["/portfolio", "/backtest", "/simulate", "/stress", "/strategies", "/settings", "/alerts"]) {
+  for (const u of ["/portfolio", "/backtest", "/simulate", "/stress", "/strategies", "/settings", "/alerts", "/journal", "/report", "/income/target"]) {
     await m.goto(`${base}${u}`, { waitUntil: "networkidle" });
     await m.waitForTimeout(600);
     const overflow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

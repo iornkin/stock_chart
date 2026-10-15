@@ -16,6 +16,10 @@ import { categoryOf, Field, KV, LocalOnlyNote, parseNum, pct, Seg, signedKrw, si
 import { SimLineChart, WeightBars } from "@/components/sim/charts";
 import PanelTabs from "@/components/PanelTabs";
 import TaxSection from "./TaxSection";
+import DataCheckSection from "./DataCheckSection";
+import CsvImport from "./CsvImport";
+import ChangeSection, { TimeMachine } from "./ChangeSection";
+import { missingDividendRecords } from "@/lib/portfolio/data-check";
 import { AfterTaxPanel } from "@/components/DividendTax";
 import PerformanceSection from "./PerformanceSection";
 import RebalanceSection from "./RebalanceSection";
@@ -71,10 +75,12 @@ export default function PortfolioClient() {
   const tabs = [
     { key: "holdings", label: "보유 종목", content: <HoldingsSection s={s} v={view} /> },
     { key: "performance", label: "성과 분석", content: <PerformanceSection p={p} /> },
+    { key: "change", label: "변화 분석", content: <ChangeSection p={p} /> },
     { key: "targets", label: "목표 비중", content: <RebalanceSection p={p} s={s} save={save} /> },
     { key: "exposure", label: "노출 분석", content: <ExposureSection s={s} /> },
     { key: "income", label: "분배금", content: <DividendSection s={s} /> },
     { key: "tax", label: "세금", content: <TaxSection p={p} s={s} /> },
+    { key: "check", label: "데이터 점검", content: <DataCheckSection p={p} s={s} save={save} /> },
     { key: "history", label: "자산 추이", content: <HistorySection p={p} s={s} /> },
     { key: "input", label: p.mode === "simple" ? "보유 종목 입력" : "거래 입력·내역", content: <InputSection p={p} save={save} s={s} v={view} /> },
   ];
@@ -451,6 +457,10 @@ function HistorySection({ p, s }: { p: PortfolioData; s: PortfolioSummary }) {
         !ser.loading && <Empty>거래일이 2일 이상 쌓이면 표시합니다.</Empty>
       )}
       {s.issues.length > 0 && <p className="mt-2 text-[11px] text-warn">거래 내역에 확인할 항목이 있어 일부 기록이 계산에서 빠졌을 수 있습니다.</p>}
+      <div className="mt-5 border-t border-line pt-4">
+        <p className="mb-2 text-sm font-semibold">타임머신 — 과거 날짜의 실제 보유 상태</p>
+        <TimeMachine p={p} />
+      </div>
     </Section>
   );
 }
@@ -485,6 +495,9 @@ function InputSection({ p, save, s, v }: { p: PortfolioData; save: (fn: (cur: Po
       }
     >
       {p.mode === "simple" ? <SimpleEditor p={p} save={save} v={v} /> : <LedgerEditor p={p} save={save} s={s} />}
+      <div className="mt-4">
+        <CsvImport p={p} save={save} />
+      </div>
     </Section>
   );
 }
@@ -800,24 +813,7 @@ function DividendSuggestions({ p, save }: { p: PortfolioData; save: (fn: (cur: P
   const ser = useSeriesMap(symbols);
   const [taxPct, setTaxPct] = useState("15");
   const today = etToday();
-  const list = useMemo(() => {
-    const out: { symbol: string; ex: string; pay: string | null; perShare: number; shares: number }[] = [];
-    for (const sym of symbols) {
-      const x = ser.series[sym];
-      if (!x) continue;
-      const first = p.ledger.filter((t) => t.symbol === sym).map((t) => t.date).sort()[0];
-      for (const d of x.divs) {
-        const when = d.pay ?? d.ex;
-        if (d.ex <= first || when > today) continue;
-        const held = computeLedger(p.ledger, {}, addDays(d.ex, -1)).positions.find((q) => q.symbol === sym)?.shares ?? 0;
-        if (held <= 0) continue;
-        const recorded = p.ledger.some((t) => (t.type === "dividend" || t.type === "reinvest") && t.symbol === sym && t.date >= addDays(d.ex, -3) && t.date <= addDays(when, 20));
-        if (!recorded) out.push({ symbol: sym, ex: d.ex, pay: d.pay, perShare: d.amount, shares: held });
-      }
-    }
-    return out.sort((a, b) => b.ex.localeCompare(a.ex));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.ledger, ser.series, today]);
+  const list = useMemo(() => missingDividendRecords(p.ledger, ser.series, today), [p.ledger, ser.series, today]);
   if (!list.length) return null;
   const add = (it: (typeof list)[number]) => {
     const gross = Math.round(it.perShare * it.shares * 100) / 100;
