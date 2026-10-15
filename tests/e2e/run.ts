@@ -42,6 +42,11 @@ const ENV: Record<string, string> = {
   FRED_API_BASE: `${M}/fred`,
   FRED_API_KEY: "test",
   SEC_API_BASE: `${M}/sec`,
+  SEC_WWW_BASE: `${M}/secwww`,
+  FINRA_API_BASE: `${M}/finra-api`,
+  FINRA_CDN_BASE: `${M}/finra-cdn`,
+  CBOE_CDN_BASE: `${M}/cboe-cdn`,
+  AAII_BASE: `${M}/aaii`,
   SEC_USER_AGENT: "USI-E2E test@example.com",
   ADMIN_TOKEN: "e2e-admin",
   POLYGON_API_KEY: "",
@@ -118,10 +123,10 @@ async function main() {
     await fetch(`${M}/yahoo1/v8/finance/chart/QQQ?interval=1d&range=5d`);
 
     // ── 2) 자동 업데이트 작업 ──
-    for (const job of ["refresh_quotes", "collect_reference", "collect_eod", "collect_news", "briefing_close", "briefing_intraday", "briefing_non_trading"]) {
+    for (const job of ["refresh_quotes", "collect_reference", "collect_eod", "collect_news", "briefing_close", "briefing_intraday", "briefing_non_trading", "collect_positioning"]) {
       const t0 = Date.now();
-      // 장중 브리핑은 합성 데이터의 마지막 거래일 기준으로 생성 (테스트 실행 시각과 무관하게)
-      const extra = job === "briefing_intraday" ? ["--force", "--date", marketStatus().lastCompletedSession] : ["--force"];
+      // 장중 브리핑·포지션 수집은 합성 데이터의 마지막 거래일 기준으로 (테스트 실행 시각과 무관하게)
+      const extra = job === "briefing_intraday" || job === "collect_positioning" ? ["--force", "--date", marketStatus().lastCompletedSession] : ["--force"];
       const code = await runJob(job, extra);
       check(`작업 ${job} 실행`, code === 0, `${((Date.now() - t0) / 1000).toFixed(1)}초`);
     }
@@ -135,6 +140,10 @@ async function main() {
       check("JEPI 분배금: 지급일 포함 (Nasdaq 병합)", divs.length > 0 && divs.every((x) => x.pay_date), JSON.stringify(divs[0]));
       const schd = d.prepare("SELECT ex_date, amount, amount_raw, split_adjusted FROM dividends WHERE symbol='SCHD' AND ex_date < '2024-10-11' ORDER BY ex_date DESC LIMIT 1").get() as { amount: number; amount_raw: number; split_adjusted: number } | undefined;
       check("SCHD 분할 전 지급액 분할 조정 (3:1)", Boolean(schd && schd.split_adjusted === 1 && Math.abs(schd.amount_raw / schd.amount - 3) < 0.01), JSON.stringify(schd));
+      const cnt = (sql: string) => (d.prepare(sql).get() as { n: number }).n;
+      check("포지션: 공매도 잔고(FINRA)·공매도 거래량·Cboe·AAII 저장 (서로 다른 표)", cnt("SELECT count(*) AS n FROM short_interest WHERE symbol='AAPL'") > 10 && cnt("SELECT count(*) AS n FROM short_volume WHERE symbol='AAPL'") >= 20 && cnt("SELECT count(*) AS n FROM option_market WHERE product='total'") > 100 && cnt("SELECT count(*) AS n FROM sentiment_survey") >= 10);
+      check("포지션: 종목 옵션 합계 저장, 옵션 없는 종목(GLDM)은 저장 안 함", cnt("SELECT count(*) AS n FROM option_stats WHERE symbol='AAPL'") === 1 && cnt("SELECT count(*) AS n FROM option_stats WHERE symbol='GLDM'") === 0);
+      check("포지션: 13F 제출 7건 (기관 3곳 × 2분기 + 추가 보고 정정 1)", cnt("SELECT count(*) AS n FROM inst_filings") === 7, String(cnt("SELECT count(*) AS n FROM inst_filings")));
       const fake = d.prepare("SELECT count(*) AS n FROM news n JOIN news_symbols s ON s.news_id=n.id WHERE s.symbol='QQQ'").get() as { n: number };
       check("QQQ 뉴스 저장", fake.n > 0, `${fake.n}건`);
       d.close();

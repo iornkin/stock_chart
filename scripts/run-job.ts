@@ -41,7 +41,7 @@ async function main() {
   if (name === "due") process.exit((await runDue()) ? 0 : 1);
   const list: JobName[] =
     name === "all"
-      ? ["refresh_quotes", "collect_reference", "collect_eod", "collect_news", "briefing_close"]
+      ? ["refresh_quotes", "collect_reference", "collect_eod", "collect_news", "briefing_close", "collect_positioning"]
       : name && isJobName(name)
         ? [name]
         : [];

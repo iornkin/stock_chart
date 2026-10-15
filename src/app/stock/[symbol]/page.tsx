@@ -30,6 +30,8 @@ import { perRequest, readSearchParams } from "@/lib/page-mode";
 import { IS_STATIC } from "@/lib/static-mode";
 import RelTime from "@/components/RelTime";
 import MarketPhaseText from "@/components/MarketPhaseText";
+import SymbolPositioningView from "@/components/positioning/SymbolPositioningView";
+import { readMarketSentiment, readSymbolPositioning } from "@/lib/data/positioning";
 
 /** 정적 사이트: 지원 종목(과 이전 티커) 페이지를 모두 미리 만든다. 서버 모드에서는 내보내지 않는다(요청마다 렌더링). */
 export const generateStaticParams = IS_STATIC
@@ -76,6 +78,7 @@ export default async function StockPage({ params, searchParams }: Props) {
     { key: "fundamentals", label: isEtf ? "ETF 정보" : "재무 정보" },
     { key: "dividends", label: `배당·분배금` },
     { key: "news", label: "뉴스·공시" },
+    { key: "positioning", label: "포지션·심리" },
     { key: "compare", label: "종목 비교" },
   ];
 
@@ -277,6 +280,7 @@ export default async function StockPage({ params, searchParams }: Props) {
               )}
             </div>
           ),
+          positioning: <SymbolPositioningView data={readSymbolPositioning(symbol)} market={readMarketSentiment({ institutions: false })} now={renderedAt} />,
           compare: <CompareClient initial={[symbol, ...(inst.peers ?? []).slice(0, 2)]} showPresets={false} />,
         }}
       />
