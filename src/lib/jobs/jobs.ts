@@ -10,6 +10,7 @@ import { refreshDividendDetails } from "../data/dividends";
 import { collectMarketNews, collectSymbolNews } from "../data/news";
 import { refreshProfile, topHoldings } from "../data/profile";
 import { recordEtfComposition } from "../data/etf-history";
+import { collectPositioning, positioningEnabled } from "../data/positioning";
 import { refreshEarnings, refreshEconomicCalendar, refreshMacro } from "../data/events";
 import { buildSymbolBriefing } from "../briefing/symbol";
 import { buildMarketBriefing } from "../briefing/market";
@@ -29,6 +30,7 @@ export type JobName =
   | "briefing_intraday"
   | "briefing_close"
   | "briefing_non_trading"
+  | "collect_positioning"
   | "cleanup";
 
 export interface JobContext {
@@ -54,6 +56,7 @@ export const JOB_LABELS: Record<JobName, string> = {
   briefing_intraday: "장중 브리핑 생성",
   briefing_close: "장 마감 후 브리핑 생성",
   briefing_non_trading: "휴장일 브리핑 생성",
+  collect_positioning: "포지션·심리 수집 (공매도·옵션·기관 13F·투자심리 설문)",
   cleanup: "오래된 데이터 정리",
 };
 
@@ -285,6 +288,18 @@ async function jobBriefingNonTrading(ctx: JobContext): Promise<JobResult> {
   return generateBriefings(ctx, "non_trading", tradeDate);
 }
 
+/** 포지션·심리: 출처마다 따로 수집하고, 일부만 실패하면 부분 성공 */
+async function jobCollectPositioning(ctx: JobContext): Promise<JobResult> {
+  if (!positioningEnabled()) return { status: "skipped", message: "포지션·심리 수집이 꺼져 있습니다 (ENABLE_POSITIONING=0)" };
+  const tradeDate = ctx.tradeDate ?? marketStatus(ctx.now).lastCompletedSession;
+  const parts = await collectPositioning({ tradeDate, now: ctx.now, log: ctx.log, symbols: ctx.symbols, ignoreOptionWindow: Boolean(ctx.force) });
+  const keys = Object.keys(parts);
+  const failed = keys.filter((k) => !parts[k].ok);
+  const summary = keys.map((k) => `${k} ${parts[k].ok ? "성공" : "실패"}`).join(", ");
+  if (!failed.length) return { status: "success", message: `${tradeDate} 포지션·심리 수집 (${summary})`, details: parts };
+  return { status: failed.length === keys.length ? "failed" : "partial", message: `${tradeDate} 포지션·심리 수집 일부 실패 (${summary})`, details: parts };
+}
+
 async function jobCleanup(ctx: JobContext): Promise<JobResult> {
   const now = ctx.now;
   run("DELETE FROM http_cache WHERE expires_at < ?", now);
@@ -305,6 +320,7 @@ export const JOBS: Record<JobName, (ctx: JobContext) => Promise<JobResult>> = {
   briefing_intraday: jobBriefingIntraday,
   briefing_close: jobBriefingClose,
   briefing_non_trading: jobBriefingNonTrading,
+  collect_positioning: jobCollectPositioning,
   cleanup: jobCleanup,
 };
 

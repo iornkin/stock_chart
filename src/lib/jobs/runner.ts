@@ -100,6 +100,10 @@ export function dueJobs(now = Date.now(), cfg: ScheduleConfig = getSchedule()): 
   if (now >= lastClose + cfg.closeBriefingDelayMin * 60_000 && now - lastClose < 4 * 86400_000) {
     out.push({ job: "briefing_close", slot: lastSession, tradeDate: lastSession });
   }
+  // 포지션·심리 (공매도·옵션·13F·투자심리) — 장 마감 데이터와 같은 시각, 옵션 값은 마감 후 10시간 이내에만 저장
+  if (now >= lastClose + cfg.eodDelayMin * 60_000 && now - lastClose < 4 * 86400_000) {
+    out.push({ job: "collect_positioning", slot: lastSession, tradeDate: lastSession });
+  }
   // 휴장일 브리핑
   if (!trading && minutes >= hm(cfg.nonTradingBriefingTime)) {
     out.push({ job: "briefing_non_trading", slot: today, tradeDate: lastSession });

@@ -93,6 +93,7 @@ export function describeSchedule(s: ScheduleConfig): ScheduleRow[] {
     { job: "briefing_intraday", when: s.intradayBriefingEnabled ? `거래일 ${s.intradayBriefingTime} ET (정규장 중)` : "사용 안 함" },
     { job: "briefing_close", when: `거래일 정규장 마감 ${s.closeBriefingDelayMin}분 후 (일봉 확정 확인 후 생성)` },
     { job: "briefing_non_trading", when: `주말·공휴일 ${s.nonTradingBriefingTime} ET` },
+    { job: "collect_positioning", when: `거래일 정규장 마감 ${s.eodDelayMin}분 후 (옵션 합계는 마감 후 10시간 이내에만 저장)` },
     { job: "cleanup", when: `매일 ${s.cleanupTime} ET` },
   ];
 }

@@ -302,6 +302,27 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   check(`${P}지표 전략: 미래 정보 검사 통과·다음 봉 체결`, t.includes("✓ 미래 정보 검사") && t.includes("같습니다") && t.includes("체결: 신호 다음 봉"));
   await page.screenshot({ path: path.join(out, `${slug}-strategy.png`), fullPage: true });
 
+  // ── 포지션·심리 (종목 탭·시장 화면) ──
+  await go("/stock/AAPL?tab=positioning");
+  t = await waitText(page, "기관 투자자 공시 보유", 20000);
+  check(`${P}포지션: 공매도 잔고·Days to Cover·유통 대비 (결제일 기준)`, t.includes("공매도 잔고 (Short Interest)") && t.includes("Days to Cover") && t.includes("결제일") && t.includes("실시간 값이 아닙니다"));
+  check(`${P}포지션: 일일 공매도 거래량은 잔고와 따로·장외 보고분 안내`, t.includes("일일 공매도 거래량 (Short Volume)") && t.includes("장외 보고") && t.includes("거래소에서 체결된 거래는 빠져"));
+  check(`${P}포지션: 풋/콜 거래량·미결제약정 기준 따로, 방향성 단정 안 함`, t.includes("풋/콜 (거래량)") && t.includes("풋/콜 (미결제약정)") && t.includes("순매수·순매도 중인지 알 수 없습니다"));
+  check(`${P}포지션: 13F 보고 기간·제출일·직전 대비 (줄임)`, t.includes("[TEST] BERKSHIRE HATHAWAY INC") && t.includes("보고 기간 말") && t.includes("제출일") && t.includes("줄임") && t.includes("지금 보유량이 아닙니다"));
+  check(`${P}포지션: 시장 전체 심리는 '이 종목 값 아님'으로 분리, 롱·숏 비율 만들지 않음`, t.includes("시장 전체 투자심리 (참고 — 이 종목 값 아님)") && t.includes("롱과 숏의 비율") && !/NaN|undefined|Infinity/.test(t));
+  await go("/stock/GLDM?tab=positioning");
+  t = await waitText(page, "이 종목의 옵션 통계가 없습니다", 15000);
+  check(`${P}포지션: 옵션 없는 종목은 시장 값으로 채우지 않음 (GLDM)`, t.includes("시장 전체 비율을 이 종목 값으로 대신 쓰지 않습니다"));
+  await go("/stock/SPXL?tab=positioning");
+  t = await waitText(page, "CUSIP", 15000);
+  check(`${P}포지션: CUSIP 미확인 종목은 13F 를 표시하지 않음 (SPXL)`, t.includes("CUSIP)를 실제 공시 가격으로 확인하지 못해"));
+  await go("/sentiment");
+  t = await waitText(page, "실제 롱·숏 비율은 왜 없나요?", 20000);
+  check(`${P}시장 심리: AAII 강세·중립·약세·스프레드·장기 평균·모집단 안내`, t.includes("개인 투자자 투자심리 설문 (AAII)") && t.includes("강세 − 약세") && t.includes("장기 평균 37.5%") && t.includes("AAII 회원 개인 투자자") && (await page.getByRole("img", { name: "AAII 주간 강세·중립·약세 비율" }).count()) === 1);
+  check(`${P}시장 심리: Cboe 풋/콜 (Cboe 거래소 기준·공표값 대조)`, t.includes("시장 전체 옵션 풋/콜 비율 (Cboe)") && t.includes("Cboe 공표값") && t.includes("미국 옵션 시장 전체(OCC 집계)가 아니라"));
+  check(`${P}시장 심리: 기관 13F 상위 보유·롱·숏 비율 미지원 이유`, t.includes("기관 투자자 공시 보유 (SEC 13F)") && t.includes("[TEST] MORGAN STANLEY") && t.includes("미지원 — 신뢰할 수 있는 공개 자료가 없음") && t.includes("NAAIM") && !/NaN|undefined|Infinity/.test(t));
+  await page.screenshot({ path: path.join(out, `${slug}-sentiment.png`), fullPage: true });
+
   // ── 스트레스 테스트 ──
   await go("/stress");
   t = await waitText(page, "전체 30% 감소");
@@ -473,12 +494,12 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   // ── 모바일 가로 넘침 ──
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "ko-KR" });
   const m = await mctx.newPage();
-  for (const u of ["/portfolio", "/backtest", "/backtest/strategy", "/simulate", "/stress", "/strategies", "/settings", "/alerts", "/journal", "/report", "/income/target"]) {
+  for (const u of ["/portfolio", "/backtest", "/backtest/strategy", "/sentiment", "/stock/AAPL?tab=positioning", "/simulate", "/stress", "/strategies", "/settings", "/alerts", "/journal", "/report", "/income/target"]) {
     await m.goto(`${base}${u}`, { waitUntil: "networkidle" });
     await m.waitForTimeout(600);
     const overflow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check(`${P}모바일(390px) ${u}: 가로 넘침 없음`, overflow <= 1, `넘침 ${overflow}px`);
-    await m.screenshot({ path: path.join(out, `${slug}-mobile${u.replace(/\//g, "-")}.png`), fullPage: true });
+    await m.screenshot({ path: path.join(out, `${slug}-mobile${u.replace(/[/?=]/g, "-")}.png`), fullPage: true });
   }
   await mctx.close();
   check(`${P}새 기능 페이지 스크립트 오류 없음`, errors.length === 0, errors.slice(0, 3).join(" | "));

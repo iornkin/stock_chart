@@ -179,6 +179,53 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS locks (
   name TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at INTEGER NOT NULL
 );
+
+-- ── 포지션·심리 (서로 다른 자료라 표를 나눈다) ──
+-- 공매도 잔고: FINRA, 결제일(월 2회) 기준 보유 중인 숏 포지션
+CREATE TABLE IF NOT EXISTS short_interest (
+  symbol TEXT NOT NULL, settlement_date TEXT NOT NULL, short_qty REAL NOT NULL, prev_qty REAL,
+  avg_daily_volume REAL, days_to_cover_reported REAL, change_pct REAL,
+  revised INTEGER NOT NULL DEFAULT 0, split INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+  PRIMARY KEY (symbol, settlement_date)
+);
+-- 일일 공매도 거래량: FINRA Reg SHO, 장외 보고분(TRF·ADF)만
+CREATE TABLE IF NOT EXISTS short_volume (
+  symbol TEXT NOT NULL, trade_date TEXT NOT NULL, short_volume REAL NOT NULL, short_exempt_volume REAL,
+  total_volume REAL NOT NULL, markets TEXT, source TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+  PRIMARY KEY (symbol, trade_date)
+);
+-- 종목별 옵션 합계: 장 마감 후 옵션 체인(OPRA 통합) 합계
+CREATE TABLE IF NOT EXISTS option_stats (
+  symbol TEXT NOT NULL, trade_date TEXT NOT NULL, call_volume REAL, put_volume REAL, call_oi REAL, put_oi REAL,
+  contracts INTEGER, expiries INTEGER, as_of TEXT, source TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+  PRIMARY KEY (symbol, trade_date)
+);
+-- 시장 전체 옵션 통계: Cboe 거래소 기준 상품군별
+CREATE TABLE IF NOT EXISTS option_market (
+  trade_date TEXT NOT NULL, product TEXT NOT NULL, call_volume REAL, put_volume REAL, call_oi REAL, put_oi REAL,
+  published_ratio REAL, source TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+  PRIMARY KEY (trade_date, product)
+);
+-- 투자심리 설문: AAII 주간 (전망 설문, 포지션 아님)
+CREATE TABLE IF NOT EXISTS sentiment_survey (
+  source TEXT NOT NULL, week_ending TEXT NOT NULL, bullish REAL NOT NULL, neutral REAL NOT NULL, bearish REAL NOT NULL,
+  fetched_at INTEGER NOT NULL,
+  PRIMARY KEY (source, week_ending)
+);
+-- 기관 13F: 제출 묶음과 (이 사이트 종목 + 상위 보유) 행
+CREATE TABLE IF NOT EXISTS inst_filings (
+  accession TEXT PRIMARY KEY, cik INTEGER NOT NULL, filer_name TEXT NOT NULL, form TEXT NOT NULL,
+  period TEXT NOT NULL, filed TEXT NOT NULL, amendment_type TEXT, table_value_total REAL, entry_total INTEGER,
+  rows_parsed INTEGER, value_note TEXT, fetched_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_inst_filings_cik ON inst_filings(cik, period);
+CREATE TABLE IF NOT EXISTS inst_holdings (
+  accession TEXT NOT NULL, cusip TEXT NOT NULL, put_call TEXT NOT NULL DEFAULT '', symbol TEXT,
+  issuer TEXT, title TEXT, shares REAL NOT NULL, value REAL NOT NULL, top_rank INTEGER,
+  PRIMARY KEY (accession, cusip, put_call)
+);
+CREATE INDEX IF NOT EXISTS idx_inst_holdings_symbol ON inst_holdings(symbol);
 `;
 
 declare global {

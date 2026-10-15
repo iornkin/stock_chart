@@ -19,7 +19,7 @@ function walk(dir: string): string[] {
 }
 
 // 1) 필수 파일
-for (const f of ["index.html", "404.html", "data/build.json", "data/quotes.json", "data/income.json", "data/exposure.json", "data/exposure-history.json", "data/series/QQQ.json", "data/chart/QQQ/1d.json", "backtest/strategy/index.html", "stock/QQQ/index.html"])
+for (const f of ["index.html", "404.html", "data/build.json", "data/quotes.json", "data/income.json", "data/exposure.json", "data/exposure-history.json", "data/series/QQQ.json", "data/chart/QQQ/1d.json", "backtest/strategy/index.html", "sentiment/index.html", "stock/QQQ/index.html"])
   if (!fs.existsSync(path.join(OUT, f))) problems.push(`필수 파일 없음: ${f}`);
 
 // 2) JSON 읽기

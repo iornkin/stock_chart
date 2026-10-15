@@ -36,6 +36,9 @@ const MIN_INTERVAL: Record<string, number> = {
   fred: 600,
   alphavantage: 1500,
   googlenews: 1200,
+  finra: 400,
+  cboe: 250,
+  aaii: 2000,
   anthropic: 0,
 };
 

@@ -35,6 +35,7 @@ export const SECTIONS: NavSection[] = [
       { href: "/compare", label: "종목 비교" },
       { href: "/leverage", label: "레버리지 ETF" },
       { href: "/map", label: "ETF 관계 지도" },
+      { href: "/sentiment", label: "시장 심리·포지션" },
     ],
     prefixes: ["/stock/"],
   },

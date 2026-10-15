@@ -10,6 +10,7 @@ import http from "node:http";
 import { INSTRUMENTS, MARKET_SYMBOLS } from "@/config/instruments";
 import { isTradingDay, marketStatus, sessionTimes } from "@/lib/market-calendar";
 import { addDays, etDate, etToUtc } from "@/lib/time";
+import { mock13fSubmissions, positioningRoute } from "./mock-positioning";
 
 const PORT = Number(process.env.MOCK_PORT ?? 4010);
 
@@ -368,6 +369,8 @@ const server = http.createServer((req, res) => {
   const qp = (k: string) => url.searchParams.get(k) ?? "";
   try {
     if (p === "/__stats") return send(res, 200, { requests });
+    // 포지션·심리 (FINRA·Cboe·AAII·옵션 체인·SEC 13F 문서)
+    if (positioningRoute(req, res, p, { LAST, days, send, hash, close: (sym, date) => dailyBars(sym).find((b) => b.date === date)?.c ?? null })) return;
     // Yahoo
     if (p === "/yahoo-cookie/") return send(res, 404, "not found", { "Set-Cookie": "A3=test-cookie; Path=/; Domain=127.0.0.1" });
     if (p.startsWith("/img/")) {
@@ -445,6 +448,8 @@ const server = http.createServer((req, res) => {
     if (sec) return req.headers["user-agent"] ? send(res, 200, secFacts(sec[1])) : send(res, 403, "UA required");
     const subm = p.match(/^\/sec\/submissions\/CIK(\d+)\.json$/);
     if (subm) {
+      const thirteenF = mock13fSubmissions(Number(subm[1]), LAST);
+      if (thirteenF) return send(res, 200, thirteenF);
       const f = [
         ["10-Q", addDays(LAST, -20), addDays(LAST, -45), "0000000000-26-000003", "q3-test.htm", "[TEST] Quarterly report"],
         ["8-K", addDays(LAST, -30), addDays(LAST, -30), "0000000000-26-000002", "8k-test.htm", "[TEST] Current report"],

@@ -47,6 +47,14 @@ export const env = {
   get fredBase() { return str("FRED_API_BASE", "https://api.stlouisfed.org"); },
   get alphaVantageBase() { return str("ALPHAVANTAGE_API_BASE", "https://www.alphavantage.co"); },
   get googleNewsBase() { return str("GOOGLE_NEWS_BASE", "https://news.google.com"); },
+  /** SEC 파일 보관소 (13F 정보 표 등 — data.sec.gov 와 주소가 다름) */
+  get secWwwBase() { return str("SEC_WWW_BASE", "https://www.sec.gov"); },
+  get finraApiBase() { return str("FINRA_API_BASE", "https://api.finra.org"); },
+  get finraCdnBase() { return str("FINRA_CDN_BASE", "https://cdn.finra.org"); },
+  get cboeCdnBase() { return str("CBOE_CDN_BASE", "https://cdn.cboe.com"); },
+  get aaiiBase() { return str("AAII_BASE", "https://www.aaii.com"); },
+  /** 포지션·심리 데이터 수집 (공매도·옵션·13F·투자심리 설문) */
+  get positioningEnabled() { return bool("ENABLE_POSITIONING", true); },
   // ── AI 브리핑 (선택) ──
   get llmModel() { return str("LLM_MODEL", "claude-opus-5-5"); },
   get llmEffort() { return str("LLM_EFFORT", "low") as "low" | "medium" | "high"; },
