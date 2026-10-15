@@ -10,6 +10,7 @@ import { formatEt, relativeTime } from "@/lib/time";
 import { Notice, Section } from "@/components/ui";
 import { KV, usd } from "@/components/sim/common";
 import { WeightBars } from "@/components/sim/charts";
+import EtfChanges from "./EtfChanges";
 
 const M7 = INSTRUMENTS.filter((i) => i.category === "m7").map((i) => i.symbol);
 const STALE_DAYS = 7;
@@ -28,10 +29,14 @@ export default function ExposureSection({ s }: { s: PortfolioSummary }) {
   }, []);
 
   const held = s.holdings.filter((h) => h.shares > 0);
+  const positions = useMemo(() => held.filter((h) => h.value !== null).map((h) => ({ symbol: h.symbol, value: h.value as number })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [s.holdings],
+  );
   const r = useMemo(() => {
     if (!data.res || s.loading) return null;
     return portfolioExposure({
-      positions: held.filter((h) => h.value !== null).map((h) => ({ symbol: h.symbol, value: h.value as number })),
+      positions,
       cash: s.cash,
       info: data.res.items,
       now: Date.now(),
@@ -181,6 +186,7 @@ export default function ExposureSection({ s }: { s: PortfolioSummary }) {
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-muted">편입 비중은 운용사가 공시한 시점 기준이며 제공처가 공시 기준일을 주지 않아 수집 시각만 표시합니다. 같은 회사의 다른 주식 종류(GOOGL·GOOG 등)는 제공처 표기대로 따로 셉니다.</p>
       </Section>
+      {data.res && <EtfChanges positions={positions} info={data.res.items} m7={M7} />}
     </div>
   );
 }

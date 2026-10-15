@@ -75,6 +75,10 @@ export function validateBundle(x: unknown): { ok: true; bundle: UserBundle; summ
     summary.push(`전략: ${d.strategies.length}개`);
   }
   if (d.runs !== undefined && !Array.isArray(d.runs)) return { ok: false, error: "최근 계산 결과 형식이 올바르지 않습니다." };
+  if (d.journal !== undefined) {
+    if (!Array.isArray(d.journal) || d.journal.some((j) => !isObj(j) || typeof j.symbol !== "string" || typeof j.date !== "string" || !Array.isArray(j.reviews))) return { ok: false, error: "투자 기록 형식이 올바르지 않습니다." };
+    summary.push(`투자 기록: ${d.journal.length}건`);
+  }
   if (d.alerts !== undefined) {
     const a = d.alerts;
     if (!isObj(a) || !Array.isArray(a.rules) || !Array.isArray(a.log) || !isObj(a.baseline)) return { ok: false, error: "알림 데이터 형식이 올바르지 않습니다." };

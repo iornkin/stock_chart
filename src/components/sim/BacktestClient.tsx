@@ -2,7 +2,8 @@
 /** 과거 백테스트 — 사용자가 정한 시작일·종료일, 여러 포트폴리오 동일 조건 비교, 벤치마크 비교 */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRuns, useSeriesMap, useStrategies, etToday } from "@/lib/client/user-data";
-import { compareWithBenchmark, fullPeriodStat, REBALANCE_KO, runBacktestSuite, toKrw, validateWeights, checkCoverage, type BacktestConfig, type BacktestResult, type Rebalance } from "@/lib/sim/backtest";
+import { compareWithBenchmark, fairnessCheck, fullPeriodStat, REBALANCE_KO, riskExtras, runBacktestSuite, toKrw, validateWeights, checkCoverage, type BacktestConfig, type BacktestResult, type Rebalance } from "@/lib/sim/backtest";
+import { INSTRUMENTS } from "@/config/instruments";
 import { formatEt } from "@/lib/time";
 import { Notice, Section } from "@/components/ui";
 import { Disclaimer, Field, krw, parseNum, pct, rowsFrom, rowsToItems, rowsProblem, Seg, SymbolSelect, tone, usd } from "./common";
@@ -76,7 +77,7 @@ export default function BacktestClient() {
     const sp = new URLSearchParams(window.location.search);
     const ids = (sp.get("compare") ?? sp.get("strategy") ?? "").split(",").filter(Boolean);
     const picked = ids.map((id) => strategies.value.find((s) => s.id === id)).filter((s): s is NonNullable<typeof s> => !!s);
-    if (picked.length) setList(picked.slice(0, 4).map((s, i) => ({ key: LETTERS[i], name: s.name, rows: rowsFrom(s.items) })));
+    if (picked.length) setList(picked.slice(0, 4).map((s, i) => ({ key: LETTERS[i], name: s.name, rows: rowsFrom(s.items), auto: false })));
   }, [strategies.loaded, strategies.value]);
 
   const symbols = useMemo(() => {
@@ -172,7 +173,7 @@ export default function BacktestClient() {
       const r = parseSettings(JSON.parse(await file.text()));
       if (!r.ok) return setLoadMsg({ ok: false, text: r.error });
       const x = r.settings;
-      setList(x.portfolios.map((p, i) => ({ key: LETTERS[i], name: p.name, rows: rowsFrom(p.items) })));
+      setList(x.portfolios.map((p, i) => ({ key: LETTERS[i], name: p.name, rows: rowsFrom(p.items), auto: false })));
       setStart(x.start);
       setEnd(x.end);
       setInitial(String(x.initial));
@@ -474,9 +475,37 @@ function Results({ out, showKrw }: { out: RunOutput; showKrw: boolean }) {
           {row("금액가중 수익률 (IRR)", (r) => pct(r.irrPct), "납입 시점까지 반영한 실제 투자자 연 수익률")}
           {row("최대 낙폭 (MDD)", (r) => <span className="text-down">{pct(r.mddPct)}</span>)}
           {row("최대 낙폭 구간", (r) => <span className="text-[11px]">{r.mddPeak ? `${r.mddPeak} → ${r.mddTrough}${r.mddRecovery ? ` (회복 ${r.mddRecovery})` : " (미회복)"}` : "-"}</span>)}
+          {row("최대 낙폭 회복 기간", (r) => {
+            const x = riskExtras(r);
+            return x.recoveryDays !== null ? `${x.recoveryDays}일` : x.underwaterDays !== null ? <span className="text-warn">미회복 ({x.underwaterDays}일째)</span> : "-";
+          }, "최대 낙폭이 시작된 고점에서 그 고점을 다시 넘을 때까지 걸린 날")}
+          {row("최악의 12개월 / 최악의 달", (r) => {
+            const x = riskExtras(r);
+            return (
+              <span className="text-[12px]">
+                <span className="text-down">{x.worst12mPct !== null ? pct(x.worst12mPct, 1) : "-"}</span>
+                {x.worst12mEnd && <span className="text-muted"> (~{x.worst12mEnd})</span>} / <span className="text-down">{x.worstMonthPct !== null ? pct(x.worstMonthPct, 1) : "-"}</span>
+                {x.worstMonth && <span className="text-muted"> ({x.worstMonth})</span>}
+              </span>
+            );
+          }, "월말 기준 시간가중 수익률")}
           {row("변동성 (연환산)", (r) => (r.volPct !== null ? `${r.volPct.toFixed(1)}%` : "-"))}
+          {row("연도별 수익률 변동 (표준편차)", (r) => {
+            const x = riskExtras(r).annualStdPct;
+            return x !== null ? `${x.toFixed(1)}%p` : "-";
+          }, "1년 전체가 있는 연도들의 수익률이 해마다 얼마나 달랐는지")}
           {row("샤프 비율", (r) => (r.sharpe !== null ? r.sharpe.toFixed(2) : "-"), `무위험 수익률 ${r0.riskFreePct.toFixed(2)}%`)}
           {row("누적 분배금 (세전 / 세후)", (r) => `${usd(r.income.gross, 0)} / ${usd(r.income.net, 0)}`)}
+          {row("└ 종목별 분배금 (세후)", (r) => (
+            <span className="text-[11px] text-ink-2">
+              {r.holdings.filter((h) => h.dividendsNet > 0).map((h) => (
+                <span key={h.symbol} className="block whitespace-nowrap">
+                  {h.symbol} {usd(h.dividendsNet, 0)}
+                </span>
+              ))}
+              {!r.holdings.some((h) => h.dividendsNet > 0) && "없음"}
+            </span>
+          ))}
           {row(
             r0.config.reinvest ? "재투자 효과 (재투자 − 현금 보유)" : "재투자했다면 (차이)",
             (r, i) => {
@@ -558,6 +587,7 @@ function Results({ out, showKrw }: { out: RunOutput; showKrw: boolean }) {
           ) : (
             <p className="text-sm text-muted">이 기간에 받은 분배금이 없습니다.</p>
           )}
+          <IncomeBySymbol r={all[incomeIdx]} />
         </div>
       ),
     },
@@ -884,6 +914,8 @@ function VerifyPanel({ out, all, names }: { out: RunOutput; all: BacktestResult[
         </table>
       </div>
 
+      <FairnessPanel all={all} names={names} normalized={out.normalizedNote.some((n) => n.includes("자동 정규화"))} />
+
       <div>
         <p className="mb-1 text-xs font-semibold text-ink-2">종목별 데이터</p>
         <div className="overflow-x-auto">
@@ -952,6 +984,143 @@ function VerifyPanel({ out, all, names }: { out: RunOutput; all: BacktestResult[
         <span className="ml-2 text-[11px] text-muted">파일에는 포트폴리오 비중·계산 조건·재현 코드만 들어갑니다. 위 &lsquo;설정 파일 불러오기&rsquo;로 다시 채울 수 있습니다.</span>
         <p className="mt-2 text-[11px] text-muted">계산 시각: {new Date(out.at).toLocaleString("ko-KR")}</p>
       </div>
+    </div>
+  );
+}
+
+const LEVERAGED = INSTRUMENTS.filter((i) => i.leverage).map((i) => i.symbol);
+
+/** 종목별 받은 분배금 (세전·세후·비중) + 연도별 */
+function IncomeBySymbol({ r }: { r: BacktestResult }) {
+  const hs = r.holdings;
+  const years = [...new Set(hs.flatMap((h) => h.dividendYears.map((y) => y.year)))].sort();
+  if (!r.income.gross) return null;
+  return (
+    <div className="mt-4 flex flex-col gap-4">
+      <div className="overflow-x-auto">
+        <p className="mb-1 text-xs font-semibold text-ink-2">종목별 받은 분배금 (기간 합계)</p>
+        <table className="table-basic">
+          <thead>
+            <tr>
+              <th>종목</th>
+              <th className="r">세전</th>
+              <th className="r">세금</th>
+              <th className="r">세후</th>
+              <th className="r">비중</th>
+            </tr>
+          </thead>
+          <tbody>
+            {hs.map((h) => (
+              <tr key={h.symbol}>
+                <td className="font-semibold">{h.symbol}</td>
+                <td className="r">{usd(h.dividendsGross)}</td>
+                <td className="r text-ink-2">{usd(h.dividendsGross - h.dividendsNet)}</td>
+                <td className="r">{usd(h.dividendsNet)}</td>
+                <td className="r">{r.income.gross > 0 ? `${((h.dividendsGross / r.income.gross) * 100).toFixed(1)}%` : "-"}</td>
+              </tr>
+            ))}
+            <tr className="font-semibold">
+              <td>합계</td>
+              <td className="r">{usd(r.income.gross)}</td>
+              <td className="r">{usd(r.income.tax)}</td>
+              <td className="r">{usd(r.income.net)}</td>
+              <td className="r">100%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="overflow-x-auto">
+        <p className="mb-1 text-xs font-semibold text-ink-2">연도별 · 종목별 (세후, 지급일 기준 — 첫해·마지막 해는 일부 기간)</p>
+        <table className="table-basic">
+          <thead>
+            <tr>
+              <th>연도</th>
+              {hs.map((h) => (
+                <th key={h.symbol} className="r">
+                  {h.symbol}
+                </th>
+              ))}
+              <th className="r">합계</th>
+            </tr>
+          </thead>
+          <tbody>
+            {years.map((y) => {
+              const row = hs.map((h) => h.dividendYears.find((d) => d.year === y)?.net ?? 0);
+              return (
+                <tr key={y}>
+                  <td>{y}</td>
+                  {row.map((v, i) => (
+                    <td key={i} className="r">
+                      {usd(v)}
+                    </td>
+                  ))}
+                  <td className="r font-semibold">{usd(row.reduce((a, b) => a + b, 0))}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** 비교 공정성 점검 + 위험 지표 나란히 */
+function FairnessPanel({ all, names, normalized }: { all: BacktestResult[]; names: string[]; normalized: boolean }) {
+  const f = fairnessCheck(all, { leveraged: LEVERAGED, normalized });
+  const icon = { ok: "✓", warn: "!", fail: "✕" } as const;
+  const cls = { ok: "text-good", warn: "text-warn", fail: "text-critical" } as const;
+  return (
+    <div>
+      <p className="mb-1 text-xs font-semibold text-ink-2">비교 공정성 점검</p>
+      <ul className="flex flex-col gap-1 text-xs">
+        {f.items.map((i) => (
+          <li key={i.label} className="flex gap-2">
+            <span className={`w-4 shrink-0 font-bold ${cls[i.status]}`} aria-label={i.status === "ok" ? "통과" : i.status === "warn" ? "주의" : "문제"}>
+              {icon[i.status]}
+            </span>
+            <span>
+              <b>{i.label}</b> — <span className="text-ink-2">{i.detail}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className={`mt-2 rounded-lg px-3 py-2 text-xs ${f.comparable ? "bg-surface-2 text-ink-2" : "bg-critical-soft text-critical"}`}>
+        {f.comparable
+          ? "같은 기간·같은 조건으로 계산해 서로 비교할 수 있습니다. 다만 위 주의 항목은 순위를 해석할 때 함께 보세요 — 수익률 순위만으로 판단하지 말고 최대 낙폭·회복 기간·최악의 기간을 같이 보세요."
+          : "기간이나 조건이 서로 달라 순위를 매기지 않습니다. 같은 조건으로 다시 계산하세요."}
+      </p>
+      {all.length > 1 && f.comparable && (
+        <div className="mt-2 overflow-x-auto">
+          <table className="table-basic">
+            <thead>
+              <tr>
+                <th />
+                <th className="r">연환산</th>
+                <th className="r">최대 낙폭</th>
+                <th className="r">회복 기간</th>
+                <th className="r">최악 12개월</th>
+                <th className="r">변동성</th>
+              </tr>
+            </thead>
+            <tbody>
+              {all.map((r, i) => {
+                const x = riskExtras(r);
+                return (
+                  <tr key={i}>
+                    <td className="text-xs">{names[i]}</td>
+                    <td className="r">{pct(r.cagrPct, 1)}</td>
+                    <td className="r text-down">{pct(r.mddPct, 1)}</td>
+                    <td className="r">{x.recoveryDays !== null ? `${x.recoveryDays}일` : x.underwaterDays !== null ? `미회복` : "-"}</td>
+                    <td className="r">{x.worst12mPct !== null ? pct(x.worst12mPct, 1) : "-"}</td>
+                    <td className="r">{r.volPct !== null ? `${r.volPct.toFixed(1)}%` : "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

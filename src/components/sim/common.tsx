@@ -234,3 +234,17 @@ export function categoryOf(symbol: string): string {
   const i = getInstrument(symbol);
   return i ? CATEGORY_LABELS[i.category] : "기타";
 }
+
+/** 표를 CSV 파일로 저장 (브라우저 안에서 만들고 서버로 보내지 않음). 엑셀에서 한글이 깨지지 않게 BOM 을 붙인다 */
+export function downloadCsv(filename: string, rows: (string | number | null | undefined)[][]) {
+  const esc = (v: string | number | null | undefined) => {
+    const s = v === null || v === undefined ? "" : typeof v === "number" ? (Number.isFinite(v) ? String(Math.round(v * 100) / 100) : "") : v;
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const blob = new Blob(["﻿" + rows.map((r) => r.map(esc).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}

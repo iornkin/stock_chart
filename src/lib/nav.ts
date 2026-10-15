@@ -51,7 +51,19 @@ export const SECTIONS: NavSection[] = [
       { href: "/calendar", label: "배당 캘린더" },
     ],
   },
-  { key: "portfolio", group: "내 투자", label: "내 자산", short: "내 자산", href: "/portfolio", icon: "M3 7h18v13H3zM3 7l3-4h12l3 4M16 13.5h2", pages: [] },
+  {
+    key: "portfolio",
+    group: "내 투자",
+    label: "내 자산",
+    short: "내 자산",
+    href: "/portfolio",
+    icon: "M3 7h18v13H3zM3 7l3-4h12l3 4M16 13.5h2",
+    pages: [
+      { href: "/portfolio", label: "내 자산" },
+      { href: "/journal", label: "투자 기록" },
+      { href: "/report", label: "투자 보고서" },
+    ],
+  },
   { key: "backtest", group: "전략 연구", label: "백테스팅", short: "백테스트", href: "/backtest", icon: "M3 12a9 9 0 109-9 9 9 0 00-6.4 2.6L3 8M3 3v5h5M12 7v5l3 2", pages: [] },
   {
     key: "simulate",
@@ -75,7 +87,7 @@ export const SECTIONS: NavSection[] = [
     icon: "M12 3l2.8 5.9 6.2.8-4.6 4.3 1.2 6.2L12 17.3 6.4 20.2l1.2-6.2L3 9.7l6.2-.8z",
     pages: [
       { href: "/watchlist", label: "관심 종목" },
-      { href: "/alerts", label: "알림" },
+      { href: "/alerts", label: "알림·확인함" },
       { href: "/settings", label: "설정·백업" },
       { href: "/status", label: "데이터 상태" },
     ],

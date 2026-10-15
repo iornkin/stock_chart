@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runBacktest, type BacktestConfig } from "@/lib/sim/backtest";
+import { fairnessCheck, riskExtras, runBacktest, type BacktestConfig } from "@/lib/sim/backtest";
 import { configFingerprint, dataFingerprint } from "@/lib/sim/repro";
 import { parseSettings, SETTINGS_FORMAT } from "@/lib/sim/backtest-settings";
 import type { PriceSeries, SeriesDiv } from "@/lib/sim/series";
@@ -145,5 +145,46 @@ describe("백테스트 설정 파일", () => {
     expect(parseSettings({ ...good, rebalance: "weekly" }).ok).toBe(false);
     expect(parseSettings({ ...good, portfolios: [] }).ok).toBe(false);
     expect(parseSettings({ ...good, initial: "1000" }).ok).toBe(false);
+  });
+});
+
+describe("백테스트 공정성·위험 지표", () => {
+  const up = mk("U", D, (i) => 100 * 1.001 ** i, divs.map((d) => ({ ...d, pay: d.ex })));
+  // 중간에 30% 빠졌다가 회복
+  const dip = mk("V", D, (i) => (i < 100 ? 100 : i < 150 ? 100 - (i - 100) * 0.6 : Math.min(130, 70 + (i - 150) * 0.6)));
+
+  it("종목별 분배금(세전·세후·연도별) 합 = 전체 분배금", () => {
+    const r = ok(runBacktest(cfg({ holdings: [{ symbol: "U", weight: 50 }, { symbol: "V", weight: 50 }], taxPct: 15 }), { U: up, V: dip }));
+    const g = r.holdings.reduce((a, h) => a + h.dividendsGross, 0);
+    const n = r.holdings.reduce((a, h) => a + h.dividendsNet, 0);
+    expect(g).toBeCloseTo(r.income.gross, 9);
+    expect(n).toBeCloseTo(r.income.net, 9);
+    const u = r.holdings.find((h) => h.symbol === "U")!;
+    expect(u.dividendYears.reduce((a, y) => a + y.gross, 0)).toBeCloseTo(u.dividendsGross, 9);
+    expect(u.dividendsNet).toBeCloseTo(u.dividendsGross * 0.85, 9);
+  });
+
+  it("최악의 12개월·최대 낙폭 회복 기간", () => {
+    const r = ok(runBacktest(cfg({ holdings: [{ symbol: "V", weight: 100 }] }), { V: dip }));
+    const x = riskExtras(r);
+    expect(r.mddPct).toBeCloseTo(-30, 0);
+    // 하락이 3개월 안에 끝나고 회복해 12개월 구간은 모두 플러스, 최악의 달은 크게 마이너스
+    expect(x.worst12mPct).not.toBeNull();
+    expect(x.worstMonthPct!).toBeLessThan(-10);
+    expect(x.recoveryDays).toBeGreaterThan(0);
+    expect(x.underwaterDays).toBeNull();
+  });
+
+  it("같은 기간·조건이면 비교 가능, 레버리지·짧은 기간·하락장 없음은 주의로 표시", () => {
+    const a = ok(runBacktest(cfg({ holdings: [{ symbol: "U", weight: 100 }] }), { U: up }));
+    const b = ok(runBacktest(cfg({ holdings: [{ symbol: "V", weight: 100 }] }), { V: dip }));
+    const f = fairnessCheck([a, b], { leveraged: ["U"], normalized: false });
+    expect(f.comparable).toBe(true);
+    expect(f.items.find((i) => i.label === "같은 시작일·종료일")!.status).toBe("ok");
+    expect(f.items.find((i) => i.label === "레버리지 ETF")).toBeTruthy();
+    expect(f.items.find((i) => i.label === "비교 기간 길이")!.status).toBe("fail"); // 약 1.6년
+    // 조건이 다르면 비교 불가
+    const c = ok(runBacktest(cfg({ holdings: [{ symbol: "U", weight: 100 }], costPct: 1 }), { U: up }));
+    expect(fairnessCheck([a, c], { leveraged: [], normalized: false }).comparable).toBe(false);
   });
 });

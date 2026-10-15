@@ -1,17 +1,19 @@
 "use client";
 /** 목표 배당 계산기 — 매달 받고 싶은 금액에서 필요한 투자금을 거꾸로 계산 (최근 12개월 실제 지급 기준) */
 import { useState } from "react";
-import { useFx, useIncome } from "@/lib/client/user-data";
+import { useFx, useIncome, usePortfolio } from "@/lib/client/user-data";
+import { usePortfolioSummary } from "@/lib/client/portfolio-summary";
+import { goalPlan, type GoalInput } from "@/lib/sim/goal";
 import { solveTarget, type TargetResult } from "@/lib/sim/target";
 import { FIN_INCOME_THRESHOLD_KRW } from "@/lib/portfolio/tax";
 import { formatEt } from "@/lib/time";
 import { Notice, Section } from "@/components/ui";
 import PanelTabs from "@/components/PanelTabs";
-import { Disclaimer, Field, krw, parseNum, PRESETS, rowsFrom, rowsProblem, rowsToItems, Seg, usd } from "./common";
+import { Disclaimer, Field, krw, parseNum, PRESETS, rowsFrom, rowsProblem, rowsToItems, Seg, tone, usd } from "./common";
 import { GroupedBars, SERIES_VARS } from "./charts";
 import PortfolioInputs, { LETTERS, type PortfolioInput } from "./PortfolioInputs";
 
-const START = [PRESETS[0], PRESETS[2], PRESETS[3]].map((p, i) => ({ key: LETTERS[i], name: p.name, rows: rowsFrom(p.items) }));
+const START = [PRESETS[0], PRESETS[2], PRESETS[3]].map((p, i) => ({ key: LETTERS[i], name: p.name, rows: rowsFrom(p.items), auto: true }));
 
 export default function IncomeTargetClient() {
   const [amount, setAmount] = useState("1000000");
@@ -212,9 +214,128 @@ export default function IncomeTargetClient() {
           )}
         </Section>
       )}
+      {Number.isFinite(targetUsd) && targetUsd > 0 && (
+        <GoalPlanSection targetUsd={targetUsd} afterTax={afterTax} taxPct={parseNum(tax)} cur={cur} fxRate={fx.rate} defaultYield={ok.length ? ok[Math.min(focus, ok.length - 1)].r.yieldPct : null} />
+      )}
       <Disclaimer>
         최근 12개월 실제 정기 지급액(특별분배 제외)과 현재가로 계산했습니다. 분배금은 매번 달라질 수 있고, 분배금 수익률이 높다고 총수익률이 높은 것은 아닙니다 — 커버드콜 ETF 등은 분배금만큼 가격이 내려가거나 상승 참여가 제한될 수 있습니다. 세금은 미국 원천징수만 가정했으며, 연간 금융소득이 2,000만 원을 넘으면 종합과세 대상입니다.
       </Disclaimer>
     </div>
+  );
+}
+
+const fmtMonths = (m: number | null) => (m === null ? "50년 안에 못 닿음" : m === 0 ? "이미 목표 이상" : `${Math.floor(m / 12) ? `${Math.floor(m / 12)}년 ` : ""}${m % 12 ? `${m % 12}개월` : ""}`.trim());
+
+/** 지금 자산 + 매달 투자로 목표 월 분배금에 언제 닿는지, 얼마를 넣어야 하는지 (가정 계산) */
+function GoalPlanSection({ targetUsd, afterTax, taxPct, cur, fxRate, defaultYield }: { targetUsd: number; afterTax: boolean; taxPct: number; cur: "KRW" | "USD"; fxRate: number | null; defaultYield: number | null }) {
+  const pf = usePortfolio();
+  const mine = usePortfolioSummary(pf.value);
+  const [current, setCurrent] = useState("0");
+  const [monthly, setMonthly] = useState("1000");
+  const [years, setYears] = useState("10");
+  const [yieldStr, setYieldStr] = useState("");
+  const [total, setTotal] = useState("7");
+  const [reinvest, setReinvest] = useState(true);
+  const yieldPct = yieldStr.trim() ? parseNum(yieldStr) : (defaultYield ?? 4);
+  const base: GoalInput = { currentUsd: parseNum(current), monthlyUsd: parseNum(monthly), years: parseNum(years), targetMonthlyUsd: targetUsd, afterTax, yieldPct, totalReturnPct: parseNum(total), taxPct, reinvest };
+  const scen: { label: string; input: GoalInput; note: string }[] = [
+    { label: "기본 가정", input: base, note: `분배금 ${yieldPct.toFixed(2)}% · 총수익률 ${base.totalReturnPct}%` },
+    { label: "분배금 20% 감소", input: { ...base, yieldPct: yieldPct * 0.8 }, note: "분배금 수익률이 계속 20% 낮다면" },
+    { label: "시작 직후 가격 30% 하락", input: { ...base, shockPct: 30 }, note: "지금 자산이 바로 30% 빠진 뒤 회복 가정은 같음" },
+    { label: "총수익률 3%p 낮음", input: { ...base, totalReturnPct: base.totalReturnPct - 3 }, note: "가격 상승이 기대보다 낮으면" },
+    ...(cur === "KRW" ? [{ label: "원화 강세 10%", input: { ...base, targetMonthlyUsd: targetUsd / 0.9 }, note: "같은 원화 목표에 달러가 더 필요" }] : []),
+  ];
+  const res = scen.map((x) => ({ ...x, r: goalPlan(x.input) }));
+  const main = res[0].r;
+  const both = (v: number) => (fxRate ? `${usd(v, 0)} (≈ ${krw(v * fxRate)})` : usd(v, 0));
+  return (
+    <Section title="4. 목표 달성 계획 (기간·월 투자)" description="지금 자산과 매달 투자금으로 위 목표에 언제 닿는지, 기간 안에 닿으려면 매달 얼마가 필요한지 거꾸로 계산합니다. 모든 수익률은 직접 넣은 가정입니다.">
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <Field label="지금 투자 자산 (USD)" hint={!mine.empty && !mine.missingPrices.length ? <button type="button" className="link" onClick={() => setCurrent(String(Math.round(mine.totalAssets)))}>내 자산 {usd(mine.totalAssets, 0)} 넣기</button> : undefined}>
+          <input className="input" inputMode="decimal" value={current} onChange={(e) => setCurrent(e.target.value)} aria-label="지금 투자 자산" />
+        </Field>
+        <Field label="매월 투자금 (USD)" hint={fxRate ? `≈ ${krw(parseNum(monthly) * fxRate)}` : undefined}>
+          <input className="input" inputMode="decimal" value={monthly} onChange={(e) => setMonthly(e.target.value)} aria-label="매월 투자금" />
+        </Field>
+        <Field label="기간 (년)">
+          <input className="input" inputMode="numeric" value={years} onChange={(e) => setYears(e.target.value)} aria-label="목표 기간" />
+        </Field>
+        <Field label="분배금 수익률 가정 (%)" hint={defaultYield !== null ? `비우면 위 포트폴리오 최근 12개월 ${defaultYield.toFixed(2)}%` : "최근 12개월 실제값 참고"}>
+          <input className="input" inputMode="decimal" value={yieldStr} onChange={(e) => setYieldStr(e.target.value)} placeholder={defaultYield !== null ? defaultYield.toFixed(2) : "4"} aria-label="분배금 수익률 가정" />
+        </Field>
+        <Field label="총수익률 가정 (연 %)" hint="가격 수익률 = 총수익률 − 분배금 수익률">
+          <input className="input" inputMode="decimal" value={total} onChange={(e) => setTotal(e.target.value)} aria-label="총수익률 가정" />
+        </Field>
+        <Field label="분배금">
+          <Seg label="목표 계획 재투자" value={reinvest} onChange={setReinvest} options={[{ v: true, l: "재투자" }, { v: false, l: "현금" }]} />
+        </Field>
+      </div>
+      {"error" in main ? (
+        <p className="mt-3 text-sm text-critical">{main.error}</p>
+      ) : (
+        <>
+          <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <div className="rounded-lg bg-surface-2 px-3 py-2.5">
+              <p className="text-xs text-muted">목표에 필요한 투자 자산</p>
+              <p className="num font-semibold">{both(main.requiredAssets)}</p>
+            </div>
+            <div className="rounded-lg bg-surface-2 px-3 py-2.5">
+              <p className="text-xs text-muted">{years}년 뒤 예상 자산 (가정)</p>
+              <p className="num font-semibold">{both(main.projectedAssets)}</p>
+              <p className="text-[11px] text-muted">월 분배금 {usd(main.projectedMonthlyIncome, 0)} ({afterTax ? "세후" : "세전"})</p>
+            </div>
+            <div className="rounded-lg bg-surface-2 px-3 py-2.5">
+              <p className="text-xs text-muted">지금 조건으로 목표까지</p>
+              <p className="num font-semibold">{fmtMonths(main.monthsToGoal)}</p>
+              <p className={`text-[11px] ${tone(-main.gap)}`}>{main.gap > 0 ? `${years}년 뒤 부족 ${usd(main.gap, 0)}` : "기간 안에 닿음"}</p>
+            </div>
+            <div className="rounded-lg bg-surface-2 px-3 py-2.5">
+              <p className="text-xs text-muted">{years}년 안에 닿으려면 매월</p>
+              <p className="num font-semibold">{main.requiredMonthly === null ? "계산 불가" : both(main.requiredMonthly)}</p>
+            </div>
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="table-basic min-w-[720px]">
+              <thead>
+                <tr>
+                  <th>가정</th>
+                  <th className="r">필요 자산</th>
+                  <th className="r">{years}년 뒤 자산</th>
+                  <th className="r">{years}년 뒤 월 분배금</th>
+                  <th className="r">목표까지</th>
+                  <th className="r">필요 월 투자금</th>
+                </tr>
+              </thead>
+              <tbody>
+                {res.map((x) =>
+                  "error" in x.r ? (
+                    <tr key={x.label}>
+                      <td>{x.label}</td>
+                      <td colSpan={5} className="text-xs text-critical">
+                        {x.r.error}
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={x.label}>
+                      <td>
+                        {x.label}
+                        <span className="block text-[11px] text-muted">{x.note}</span>
+                      </td>
+                      <td className="r">{usd(x.r.requiredAssets, 0)}</td>
+                      <td className="r">{usd(x.r.projectedAssets, 0)}</td>
+                      <td className="r">{usd(x.r.projectedMonthlyIncome, 0)}</td>
+                      <td className="r">{fmtMonths(x.r.monthsToGoal)}</td>
+                      <td className="r">{x.r.requiredMonthly === null ? "-" : usd(x.r.requiredMonthly, 0)}</td>
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
+          </div>
+          {yieldPct > 8 && <p className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-xs text-warn">분배금 수익률 가정이 {yieldPct.toFixed(1)}%로 높습니다. 높은 분배금은 가격 하락·분배금 감소와 함께 오는 경우가 많아, 위 표의 감소·하락 가정도 함께 보세요.</p>}
+          <p className="mt-2 text-[11px] leading-relaxed text-muted">매달 초 납입 → 가격 변화 → 분배금(세금 {taxPct}% 차감 후 {reinvest ? "재투자" : "현금으로 보유"}) 순서로 계산합니다. 필요 자산 = 연 목표 ÷ (분배금 수익률 × {afterTax ? "세후 비율" : "1"}). 환율은 지금 환율로 고정했으며{cur === "KRW" ? ", '원화 강세 10%'는 같은 원화 목표에 달러가 10% 더 필요한 경우입니다" : ""}. 예측이 아닌 가정 계산입니다.</p>
+        </>
+      )}
+    </Section>
   );
 }

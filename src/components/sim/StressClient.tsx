@@ -8,6 +8,7 @@ import { getInstrument } from "@/lib/instruments";
 import { Notice, Section, Empty, Fold } from "@/components/ui";
 import { Disclaimer, Field, HoldingsEditor, parseNum, pct, PRESETS, rowsFrom, rowsProblem, rowsToItems, Seg, tone, usd, type WeightRow } from "./common";
 import { GroupedBars } from "./charts";
+import RiskBudget from "./RiskBudget";
 
 type Source = "mine" | "manual";
 
@@ -19,7 +20,7 @@ interface Pos {
 }
 
 export default function StressClient() {
-  const [tab, setTab] = useState<"dividend" | "market">("dividend");
+  const [tab, setTab] = useState<"dividend" | "market" | "budget">("dividend");
   const [source, setSource] = useState<Source>("manual");
   const [rows, setRows] = useState<WeightRow[]>(rowsFrom(PRESETS[0].items));
   const [amount, setAmount] = useState("100000");
@@ -102,8 +103,9 @@ export default function StressClient() {
         {[
           ["dividend", "분배금 감소"],
           ["market", "하락장"],
+          ["budget", "위험 예산"],
         ].map(([k, l]) => (
-          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k as "dividend" | "market")} className={`border-b-2 px-3 py-2.5 text-sm ${tab === k ? "border-accent font-semibold text-accent" : "border-transparent text-ink-2"}`}>
+          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k as "dividend" | "market" | "budget")} className={`border-b-2 px-3 py-2.5 text-sm ${tab === k ? "border-accent font-semibold text-accent" : "border-transparent text-ink-2"}`}>
             {l}
           </button>
         ))}
@@ -112,6 +114,8 @@ export default function StressClient() {
         <Empty>대상 포트폴리오를 정하면 계산합니다.</Empty>
       ) : tab === "dividend" ? (
         <DividendStress positions={positions.list} onSave={(t, s) => runs.add({ kind: "dividend_stress", title: t, summary: s })} />
+      ) : tab === "budget" ? (
+        <RiskBudget positions={positions.list} />
       ) : (
         <MarketStress positions={positions.list} onSave={(t, s) => runs.add({ kind: "market_stress", title: t, summary: s })} />
       )}

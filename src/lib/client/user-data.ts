@@ -7,11 +7,16 @@ import { EMPTY_PORTFOLIO, newId, type PortfolioData, type SavedRun, type Strateg
 import type { PriceSeries } from "@/lib/sim/series";
 import type { Quote } from "@/lib/types";
 import { EMPTY_ALERTS, type AlertsData } from "@/lib/alerts/types";
+import type { JournalEntry } from "@/lib/journal/types";
 
 export function usePortfolio() {
   return useLocal<PortfolioData>("portfolio", EMPTY_PORTFOLIO);
 }
 
+
+export function useJournal() {
+  return useLocal<JournalEntry[]>("journal", []);
+}
 
 export function useAlerts() {
   return useLocal<AlertsData>("alerts", EMPTY_ALERTS);

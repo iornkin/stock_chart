@@ -11,6 +11,7 @@ import { formatEt, relativeTime } from "@/lib/time";
 import { Notice, Section } from "@/components/ui";
 import { Field, LocalOnlyNote, parseNum, Seg, SymbolField } from "@/components/sim/common";
 import { ALERT_CHECK_EVENT } from "./AlertRunner";
+import InboxPanel from "./InboxPanel";
 
 const KINDS = Object.keys(ALERT_KIND_KO) as AlertKind[];
 const HINT: Record<AlertKind, string> = {
@@ -106,7 +107,8 @@ export default function AlertsClient() {
   return (
     <div className="flex flex-col gap-5">
       {a.error && <Notice tone="critical" title="저장 오류">{a.error}</Notice>}
-      <Notice title="이렇게 동작합니다">
+      <InboxPanel />
+      <Notice title="알림은 이렇게 동작합니다">
         이 사이트를 연 브라우저 탭이 있을 때만 15분마다(그리고 화면으로 돌아올 때) 확인합니다. 데이터는 수집 작업이 실행될 때 바뀌므로 그보다 빨리 알 수는 없습니다.
         브라우저를 완전히 닫았을 때 오는 푸시 알림은 <b>지원하지 않습니다</b> — 서버가 사용자별 규칙과 구독 정보를 보관해야 해서, 개인 데이터를 브라우저에만 두는 이 사이트의 원칙과 맞지 않아 구현하지 않았습니다.
       </Notice>

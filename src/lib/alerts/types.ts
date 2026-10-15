@@ -53,6 +53,8 @@ export interface AlertsData {
   /** 브라우저 알림(Notification)도 띄울지 */
   notify: boolean;
   lastCheck: number | null;
+  /** 확인함 상태 (확인 완료·나중에·끈 종류) */
+  inbox?: import("./inbox").InboxState;
 }
 
 export const EMPTY_ALERTS: AlertsData = { version: 1, rules: [], log: [], baseline: {}, notify: false, lastCheck: null };
