@@ -7,7 +7,7 @@ import type { ExposureResponse } from "@/lib/exposure-types";
 import { getInstrument } from "@/lib/instruments";
 import { episodeImpact, estimateBeta, findEpisodes } from "@/lib/sim/stress";
 import { annualVol, compareToLimit, dividendAndPrice, holdingSectors, leveragedCrash, limitUsd, marketShock, rateSensitivity, rateShock, recentMdd, riskContributions, sectorShock, type RateSensitivity, type ScenarioResult } from "@/lib/sim/risk-budget";
-import { Fold, Notice, Section } from "@/components/ui";
+import { Fold, Section } from "@/components/ui";
 import { Disclaimer, Field, parseNum, pct, Seg, usd } from "./common";
 
 interface Pos {

@@ -99,13 +99,15 @@ export interface Strategy {
 
 export interface SavedRun {
   id: string;
-  kind: "backtest" | "future" | "montecarlo" | "dividend_stress" | "market_stress";
+  kind: "backtest" | "future" | "montecarlo" | "dividend_stress" | "market_stress" | "strategy";
   title: string;
   at: number;
   /** 화면에 보여 줄 핵심 수치 (라벨 → 값 문자열) */
   summary: { label: string; value: string }[];
   /** 다시 실행할 때 쓰는 설정 */
   config?: unknown;
+  /** 결과 재현 정보: 계산 방식 버전·데이터 범위·데이터/설정 지문·가정 */
+  meta?: { engine: string; dataFrom?: string; dataTo?: string; dataCode?: string; configCode?: string; assumptions?: string[] };
 }
 
 export function newId(): string {

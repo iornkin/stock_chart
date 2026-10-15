@@ -6,6 +6,7 @@
  * - 총수익률(현금 수령): 기간 중 받은 분배금을 재투자하지 않고 현금으로 합산.
  */
 import { maxDrawdown } from "./indicators";
+import { trIndex } from "./sim/series";
 
 export interface DailyPoint {
   date: string; // YYYY-MM-DD (ET)
@@ -27,18 +28,9 @@ export function normalizedPrice(points: DailyPoint[]): { date: string; value: nu
 /** 분배금 재투자 가정 총수익 지수 (시작값 100) */
 export function totalReturnIndex(points: DailyPoint[], divs: DivPoint[]): { date: string; value: number }[] {
   if (!points.length) return [];
-  const byDate = new Map<string, number>();
-  for (const d of divs) byDate.set(d.exDate, (byDate.get(d.exDate) ?? 0) + d.amount);
-  const out = [{ date: points[0].date, value: 100 }];
-  let idx = 100;
-  for (let i = 1; i < points.length; i++) {
-    // 휴장일에 배당락일이 걸린 경우 다음 거래일에 반영
-    let div = 0;
-    for (const [d, amt] of byDate) if (d > points[i - 1].date && d <= points[i].date) div += amt;
-    idx *= (points[i].close + div) / points[i - 1].close;
-    out.push({ date: points[i].date, value: idx });
-  }
-  return out;
+  // 공통 정의(trIndex): 휴장일에 배당락일이 걸린 경우 다음 거래일에 반영
+  const tri = trIndex({ dates: points.map((p) => p.date), close: points.map((p) => p.close), divs: divs.map((d) => ({ ex: d.exDate, amount: d.amount })) });
+  return points.map((p, i) => ({ date: p.date, value: tri[i] * 100 }));
 }
 
 export interface PeriodStats {

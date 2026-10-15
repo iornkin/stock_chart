@@ -5,7 +5,7 @@ import { INSTRUMENTS, MARKET_SYMBOLS } from "@/config/instruments";
 import { getInstrument } from "../instruments";
 import { etDate } from "../time";
 import { readBarMeta, readBars } from "./bars";
-import { readDividends } from "./dividends";
+import { readDividends, readSplits } from "./dividends";
 import { readQuotes } from "./quotes";
 import { incomeInfo, type IncomeInfo } from "../sim/income";
 import type { PriceSeries, SeriesDiv } from "../sim/series";
@@ -40,6 +40,7 @@ export function buildSeries(symbol: string): PriceSeries {
     dates,
     close,
     divs: inst ? seriesDivs(symbol) : [],
+    splits: inst ? readSplits(symbol).filter((s) => s.numerator > 0 && s.denominator > 0).map((s) => ({ date: s.date, ratio: s.numerator / s.denominator })) : [],
     source: meta?.source ?? null,
     fetchedAt: meta?.fetched_at ?? null,
     ...(dates.length ? {} : { error: "수집된 일봉 데이터가 없습니다" }),

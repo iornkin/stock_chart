@@ -7,6 +7,12 @@
 import type { BacktestConfig } from "./backtest";
 import type { PriceSeries } from "./series";
 
+/**
+ * 계산 방식 버전 — 계산 규칙(지표 정의·체결 시점·총수익률 정의 등)을 바꾸면 올린다.
+ * 저장한 결과와 지금 결과가 다르면 이 버전·데이터 코드를 비교해 '데이터가 바뀌었는지, 계산 방식이 바뀌었는지' 확인한다.
+ */
+export const ENGINE_VERSION = "2026.10.r6";
+
 export function fnv1a(s: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
@@ -34,4 +40,17 @@ export function configFingerprint(cfg: BacktestConfig): string {
 
 export function dataFingerprint(symbols: string[], series: Record<string, PriceSeries | undefined>, start: string, end: string): string {
   return fnv1a([...symbols].sort().map((s) => (series[s] ? seriesFingerprint(series[s] as PriceSeries, start, end) : `${s}:none`)).join(","));
+}
+
+/** 일반 값(설정 객체 등)의 지문 — 키 순서와 무관 */
+export function objectFingerprint(v: unknown): string {
+  const norm = (x: unknown): unknown => (Array.isArray(x) ? x.map(norm) : x && typeof x === "object" ? Object.keys(x as object).sort().map((k) => [k, norm((x as Record<string, unknown>)[k])]) : x);
+  return fnv1a(JSON.stringify(norm(v)));
+}
+
+/** 날짜·숫자 배열 지문 (전략 백테스트의 OHLCV) */
+export function barsFingerprint(dates: string[], cols: number[][], from: string, to: string): string {
+  const parts: string[] = [];
+  for (let i = 0; i < dates.length; i++) if (dates[i] >= from && dates[i] <= to) parts.push(`${dates[i]}:${cols.map((c) => c[i]).join(",")}`);
+  return fnv1a(parts.join("|"));
 }

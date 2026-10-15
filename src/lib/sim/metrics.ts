@@ -39,10 +39,15 @@ export function annualVolPct(rets: number[]): number | null {
   return rets.length >= 20 ? stdev(rets) * Math.sqrt(TRADING_DAYS) * 100 : null;
 }
 
-/** 샤프 비율 = (연환산 평균 수익률 − 무위험 수익률) ÷ 연환산 변동성 */
+/** 표준편차가 부동소수점 오차 수준이면 0 으로 본다 (일정한 수익률에서 1e−19 같은 값으로 나누는 것 방지) */
+export function isNegligible(sd: number, scale = 1): boolean {
+  return !(sd > 1e-12 * Math.max(1, Math.abs(scale)));
+}
+
+/** 샤프 비율 = (연환산 평균 수익률 − 무위험 수익률) ÷ 연환산 변동성. 변동이 없으면 null */
 export function sharpe(rets: number[], riskFreePct: number): number | null {
   const sd = stdev(rets);
-  if (rets.length < 60 || sd === 0) return null;
+  if (rets.length < 60 || isNegligible(sd)) return null;
   return (mean(rets) * TRADING_DAYS - riskFreePct / 100) / (sd * Math.sqrt(TRADING_DAYS));
 }
 

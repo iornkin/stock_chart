@@ -12,8 +12,9 @@ import PortfolioInputs, { defaultPortfolios, LETTERS, type PortfolioInput } from
 import type { CostMethod } from "@/lib/portfolio/tax";
 import BarChartSvg from "@/components/BarChartSvg";
 import PanelTabs from "@/components/PanelTabs";
+import RiskPanel from "./RiskPanel";
 import type { PriceSeries } from "@/lib/sim/series";
-import { configFingerprint, dataFingerprint } from "@/lib/sim/repro";
+import { configFingerprint, dataFingerprint, ENGINE_VERSION } from "@/lib/sim/repro";
 import { parseSettings, SETTINGS_FORMAT, type BacktestSettings } from "@/lib/sim/backtest-settings";
 
 const QUICK: { label: string; months?: number; all?: boolean }[] = [
@@ -215,6 +216,19 @@ export default function BacktestClient() {
         { label: `${out.items[i].p.key} 최대 낙폭`, value: pct(r.mddPct) },
       ]),
       config: { ...out.cfg, portfolios: out.items.map((x) => ({ name: x.p.name, items: rowsToItems(x.p.rows) })), benchmark: out.bench?.symbol ?? null },
+      // 재현 정보: 같은 설정·같은 데이터 코드면 같은 결과가 나와야 한다
+      meta: (() => {
+        const v = main[0].verification;
+        const symbols = [...new Set(main.flatMap((r) => r.holdings.map((h) => h.symbol)))];
+        return {
+          engine: ENGINE_VERSION,
+          dataFrom: v.used.start,
+          dataTo: v.used.end,
+          dataCode: dataFingerprint(symbols, out.series, v.used.start, v.used.end),
+          configCode: main.map((r) => configFingerprint(r.config)).join("+"),
+          assumptions: [`재투자 ${out.cfg.reinvest ? "예" : "아니오"}`, `리밸런싱 ${REBALANCE_KO[out.cfg.rebalance]}`, `거래 비용 ${out.cfg.costPct}%`, `분배금 세율 ${out.cfg.taxPct}%`],
+        };
+      })(),
     });
   };
 
@@ -674,6 +688,11 @@ function Results({ out, showKrw }: { out: RunOutput; showKrw: boolean }) {
           </div>
         </div>
       ),
+    },
+    {
+      key: "risk",
+      label: "위험·안정성",
+      content: <RiskPanel items={mains.map((r, i) => ({ name: names[i], dates: r.dates, index: r.twr, cagrPct: r.cagrPct, mddPct: r.mddPct }))} bench={benchMain ? { name: names[names.length - 1], dates: benchMain.dates, index: benchMain.twr } : null} rfPct={r0.riskFreePct} />,
     },
     ...(cgOn ? [{ key: "tax", label: "양도세", content: <CgResults all={all} names={names} /> }] : []),
     ...(showKrw ? [{ key: "krw", label: "원화 환산", content: <KrwResults all={all} names={names} fx={out.series["KRW=X"]} /> }] : []),

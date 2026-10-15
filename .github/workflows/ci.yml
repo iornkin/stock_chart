@@ -14,7 +14,42 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run lint
+      # 단위·기준값·속성·성능 상한 테스트
       - run: npm test
       - run: npm run build
       # 정적 사이트(GitHub Pages) 빌드가 깨지지 않았는지 확인 (빈 DB 로 빌드)
       - run: npm run build:static
+
+  # 화면까지 이어지는 흐름 점검 (합성 데이터 서버 사용 — 실제 시세·API 키 없이 실행)
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: 서버 모드 e2e
+        run: |
+          npm run build
+          E2E_OUT=e2e-out npm run test:e2e
+      - name: 정적 사이트 e2e (합성 데이터로 예약 작업과 같은 수집 → 정적 빌드)
+        run: |
+          npx tsx tests/e2e/make-static-db.ts e2e-out/static.db
+          DATABASE_PATH=e2e-out/static.db BASE_PATH=/stock_chart npm run build:static
+          npm run verify:static
+          BASE_PATH=/stock_chart E2E_OUT=e2e-out/static npm run test:e2e:static
+      - name: 실패 시 스크린샷·로그 보관
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-out
+          path: |
+            e2e-out/**/*.png
+            e2e-out/**/*.log
+            e2e-out/**/*.json
+          retention-days: 7

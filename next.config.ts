@@ -28,6 +28,20 @@ const nextConfig: NextConfig = {
         pageExtensions: ["tsx"],
       }
     : {
+        // 서버 모드 보안 헤더 (정적 호스팅(GitHub Pages)은 헤더를 정할 수 없어 적용되지 않음)
+        async headers() {
+          return [
+            {
+              source: "/:path*",
+              headers: [
+                { key: "X-Content-Type-Options", value: "nosniff" },
+                { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+                { key: "X-Frame-Options", value: "SAMEORIGIN" },
+                { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+              ],
+            },
+          ];
+        },
         async redirects() {
           // SPLG 는 2025-10-31 SPYM 으로 티커가 변경됨 (State Street 공지)
           return [{ source: "/stock/SPLG", destination: "/stock/SPYM", permanent: false }];

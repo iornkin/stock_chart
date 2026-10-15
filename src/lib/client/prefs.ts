@@ -6,22 +6,45 @@
  */
 import { useCallback, useSyncExternalStore } from "react";
 
+/** 차트에 올린 지표 하나 (종류·파라미터·숨김) — 같은 종류를 여러 개 올릴 수 있다(예: SMA 20·50·200) */
+export interface ChartIndicator {
+  id: string;
+  key: string;
+  params: Record<string, number>;
+  hidden?: boolean;
+}
+
 export interface ChartPrefs {
   type: "candle" | "line" | "area";
-  smaPeriods: number[];
-  emaPeriods: number[];
-  showBB: boolean;
-  bbPeriod: number;
-  bbMult: number;
-  showVWAP: boolean;
-  showRSI: boolean;
-  rsiPeriod: number;
-  showMACD: boolean;
-  macdFast: number;
-  macdSlow: number;
-  macdSignal: number;
+  indicators: ChartIndicator[];
+  /** 이름 붙여 저장한 지표 구성 (최대 5개) */
+  saved: { name: string; indicators: ChartIndicator[] }[];
   volMaPeriod: number;
   showDividends: boolean;
+}
+
+export const DEFAULT_CHART_INDICATORS: ChartIndicator[] = [
+  { id: "sma20", key: "sma", params: { n: 20 } },
+  { id: "sma50", key: "sma", params: { n: 50 } },
+  { id: "sma200", key: "sma", params: { n: 200 } },
+  { id: "rsi", key: "rsi", params: { n: 14 } },
+  { id: "macd", key: "macd", params: { fast: 12, slow: 26, sig: 9 } },
+];
+
+/** 예전 설정(SMA 기간 목록·볼린저/RSI/MACD 켜기)을 지표 목록으로 옮긴다 */
+type LegacyChart = { smaPeriods?: number[]; emaPeriods?: number[]; showBB?: boolean; bbPeriod?: number; bbMult?: number; showVWAP?: boolean; showRSI?: boolean; rsiPeriod?: number; showMACD?: boolean; macdFast?: number; macdSlow?: number; macdSignal?: number };
+export function migrateChart(c: Partial<ChartPrefs> & LegacyChart): ChartPrefs {
+  const base: ChartPrefs = { type: c.type ?? "candle", indicators: [], saved: Array.isArray(c.saved) ? c.saved.slice(0, 5) : [], volMaPeriod: c.volMaPeriod ?? 20, showDividends: c.showDividends ?? true };
+  if (Array.isArray(c.indicators)) return { ...base, indicators: c.indicators.filter((x) => x && typeof x.key === "string" && typeof x.id === "string") };
+  if (!("smaPeriods" in c) && !("showRSI" in c)) return { ...base, indicators: DEFAULT_CHART_INDICATORS };
+  const out: ChartIndicator[] = [];
+  for (const n of c.smaPeriods ?? []) out.push({ id: `sma${n}`, key: "sma", params: { n } });
+  for (const n of c.emaPeriods ?? []) out.push({ id: `ema${n}`, key: "ema", params: { n } });
+  if (c.showBB) out.push({ id: "bb", key: "bb", params: { n: c.bbPeriod ?? 20, k: c.bbMult ?? 2 } });
+  if (c.showVWAP) out.push({ id: "vwap", key: "vwap", params: { n: 20 } });
+  if (c.showRSI) out.push({ id: "rsi", key: "rsi", params: { n: c.rsiPeriod ?? 14 } });
+  if (c.showMACD) out.push({ id: "macd", key: "macd", params: { fast: c.macdFast ?? 12, slow: c.macdSlow ?? 26, sig: c.macdSignal ?? 9 } });
+  return { ...base, indicators: out };
 }
 
 export interface Prefs {
@@ -44,18 +67,8 @@ export const DEFAULT_PREFS: Prefs = {
   showKrw: false,
   chart: {
     type: "candle",
-    smaPeriods: [20, 50, 200],
-    emaPeriods: [],
-    showBB: false,
-    bbPeriod: 20,
-    bbMult: 2,
-    showVWAP: false,
-    showRSI: true,
-    rsiPeriod: 14,
-    showMACD: true,
-    macdFast: 12,
-    macdSlow: 26,
-    macdSignal: 9,
+    indicators: DEFAULT_CHART_INDICATORS,
+    saved: [],
     volMaPeriod: 20,
     showDividends: true,
   },
@@ -70,7 +83,7 @@ function read(): Prefs {
   try {
     const raw = typeof window !== "undefined" ? window.localStorage.getItem(KEY) : null;
     const parsed = raw ? (JSON.parse(raw) as Partial<Prefs>) : {};
-    cache = { ...DEFAULT_PREFS, ...parsed, chart: { ...DEFAULT_PREFS.chart, ...(parsed.chart ?? {}) } };
+    cache = { ...DEFAULT_PREFS, ...parsed, chart: migrateChart({ ...(parsed.chart ?? {}) }) };
   } catch {
     cache = DEFAULT_PREFS;
   }

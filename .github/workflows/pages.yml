@@ -101,6 +101,16 @@ jobs:
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "DB 스냅샷 $(date -u +%Y-%m-%dT%H:%MZ)"
           git push -q -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$DATA_BRANCH"
 
+      # 배포 차단 기준: 타입 검사·단위 테스트가 하나라도 실패하면 이후 단계(빌드·배포)를 하지 않는다.
+      # (데이터 수집·DB 저장은 위에서 이미 끝났으므로 다음 실행에서 이어진다)
+      - name: 배포 전 검사 (타입·단위 테스트)
+        env:
+          # 테스트가 수집한 DB 를 건드리지 않도록 임시 경로 사용
+          DATABASE_PATH: ${{ runner.temp }}/unit-test.db
+        run: |
+          npm run typecheck
+          npm test
+
       - name: Pages 설정
         id: pages
         uses: actions/configure-pages@v5
@@ -109,6 +119,16 @@ jobs:
         env:
           BASE_PATH: ${{ steps.pages.outputs.base_path }}
         run: npm run build:static
+
+      # 필수 파일·JSON·시세 값 점검, API 키 값이 결과물에 들어가지 않았는지 대조
+      - name: 정적 결과물 점검
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npm run verify:static
 
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkCoverage, compareWithBenchmark, runBacktest, runBacktestSuite, totalReturnPath, validateWeights, toKrw, type BacktestConfig, type BacktestResult } from "@/lib/sim/backtest";
+import { checkCoverage, compareWithBenchmark, runBacktest, runBacktestSuite, totalReturnPath, validateWeights, toKrw, type BacktestConfig } from "@/lib/sim/backtest";
 import { drawdown, periodReturns, xirrPct } from "@/lib/sim/metrics";
 import { monthlyHistory, runFuture, runMonteCarlo, scenarioHoldings, type FutureConfig } from "@/lib/sim/future";
 import { dividendStress, episodeImpact, estimateBeta, findEpisodes, linearShock, pathShock } from "@/lib/sim/stress";

@@ -14,7 +14,8 @@ export async function GET() {
   const schedule = getSchedule();
   return json({
     market: marketStatus(),
-    worker: { alive: Boolean(lock && lock.expires_at > Date.now()), owner: lock?.owner ?? null, leaseUntil: lock?.expires_at ?? null },
+    // 작업자 식별자(호스트 이름·프로세스 번호)는 공개 화면에 내보내지 않는다
+    worker: { alive: Boolean(lock && lock.expires_at > Date.now()), owner: lock ? "worker" : null, leaseUntil: lock?.expires_at ?? null },
     schedule,
     scheduleRows: describeSchedule(schedule).map((r) => ({ ...r, label: JOB_LABELS[r.job] })),
     jobs: jobHealth(),

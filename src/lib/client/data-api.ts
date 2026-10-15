@@ -11,8 +11,17 @@ import type { IncomeInfo } from "@/lib/sim/income";
 import type { ExposureResponse } from "@/lib/exposure-types";
 import type { EtfHistoryResponse } from "@/lib/etf-history";
 
+const FETCH_TIMEOUT_MS = 45_000;
+
 export async function getJson<T>(url: string): Promise<T> {
-  const r = await fetch(url, IS_STATIC ? { cache: "no-cache" } : undefined);
+  let r: Response;
+  try {
+    // 응답이 오래 없으면 끊고 오류로 보여 준다 (무한 로딩 방지)
+    r = await fetch(url, { ...(IS_STATIC ? { cache: "no-cache" as const } : {}), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  } catch (e) {
+    const name = (e as Error)?.name;
+    throw new Error(name === "TimeoutError" || name === "AbortError" ? `응답이 ${FETCH_TIMEOUT_MS / 1000}초 넘게 없어 중단했습니다. 네트워크를 확인하고 다시 시도하세요.` : "네트워크 오류로 데이터를 받지 못했습니다.");
+  }
   let j: unknown = null;
   try {
     j = await r.json();

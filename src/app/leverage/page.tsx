@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { analyzeLeverageGroup, leverageGroups, type LeverageAnalysis } from "@/lib/leverage";
+import { analyzeLeverageGroup, leverageGroups, recoveryNeededPct, type LeverageAnalysis } from "@/lib/leverage";
 import { getInstrument } from "@/lib/instruments";
 import { changeClass, fmtPct } from "@/lib/format";
 import { perRequest } from "@/lib/page-mode";
@@ -273,6 +273,48 @@ function GroupPanel({ a }: { a: LeverageAnalysis }) {
           </table>
         </div>
       </div>
+
+      {a.regimeGaps.length > 0 && (
+        <div>
+          <p className="mb-1 text-sm font-semibold">횡보장 vs 추세장 — 실제 수익률과 &lsquo;기준 × 배수&rsquo;의 차이</p>
+          <p className="mb-2 text-xs text-ink-2">63거래일(약 3개월) 구간을 21거래일 간격으로 나눠, 기준 ETF 가 거의 제자리(±3%)인 구간과 크게 오르거나(+10% 초과) 내린(−10% 미만) 구간에서 평균을 냈습니다. 매일 배수를 다시 맞추기 때문에 오르내림이 반복되면 손해(음수 차이), 한 방향으로 꾸준히 움직이면 복리 덕을 보는(양수 차이) 경향이 실제 기록에 나타납니다.</p>
+          <div className="overflow-x-auto">
+            <table className="table-basic">
+              <thead>
+                <tr>
+                  <th>종목</th>
+                  <th>구간</th>
+                  <th className="r">구간 수</th>
+                  <th className="r">실제 평균</th>
+                  <th className="r">{a.base} × 배수 평균</th>
+                  <th className="r">차이 (%p)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {a.regimeGaps.flatMap((g) =>
+                  g.rows.map((r) => (
+                    <tr key={`${g.symbol}-${r.regime}`}>
+                      <td className="font-semibold">
+                        {g.symbol} ({lev(g.leverage)})
+                      </td>
+                      <td>{r.regime}</td>
+                      <td className="r num">{r.windows}</td>
+                      <td className="r">{r.avgActual !== null ? <P v={r.avgActual} /> : "-"}</td>
+                      <td className="r">{r.avgMultiple !== null ? <P v={r.avgMultiple} /> : "-"}</td>
+                      <td className={`r num font-semibold ${r.avgGap === null ? "" : r.avgGap < 0 ? "text-down" : "text-up"}`}>{r.avgGap !== null ? `${r.avgGap > 0 ? "+" : ""}${r.avgGap.toFixed(1)}` : "-"}</td>
+                    </tr>
+                  )),
+                )}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-xs text-ink-2">
+            급락 뒤 원래 값으로 돌아가려면 더 큰 상승이 필요합니다:{" "}
+            {a.members.map((m) => `${m.symbol} 최대 낙폭 ${fmtPct(m.mdd, 1)} → 회복에 +${(recoveryNeededPct(m.mdd) ?? 0).toFixed(0)}% 필요`).join(" · ")}. (−50% 는 +100%, −80% 는 +400%)
+          </p>
+          <p className="mt-1 text-[11px] text-muted">기초 지수의 장기 수익률에 배수를 곱해 레버리지 ETF 의 미래 성과를 계산하면 이 차이(변동성·복리 효과)와 운용 비용이 빠져 크게 틀릴 수 있습니다.</p>
+        </div>
+      )}
 
       {a.excluded.length > 0 && (
         <Notice tone="warn" title="데이터가 없어 제외한 종목">

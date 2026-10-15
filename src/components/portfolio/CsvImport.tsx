@@ -41,7 +41,7 @@ export default function CsvImport({ p, save }: { p: PortfolioData; save: (fn: (c
   };
 
   const headers = file ? (hasHeader ? file.rows[0] : file.rows[0].map((_, i) => `${i + 1}번째 열`)) : [];
-  const body = file ? (hasHeader ? file.rows.slice(1) : file.rows) : [];
+  const body = useMemo(() => (file ? (hasHeader ? file.rows.slice(1) : file.rows) : []), [file, hasHeader]);
   const today = etToday();
 
   const txRows = useMemo(() => (file && ledger ? buildTxns(body, map as Record<TxnField, number | null>, p.ledger, { today, batch, now: Date.now() }) : []), [file, body, map, p.ledger, today, batch, ledger]);

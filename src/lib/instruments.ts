@@ -16,9 +16,19 @@ for (const i of INSTRUMENTS) {
   for (const f of i.formerSymbols ?? []) alias.set(f, i.symbol);
 }
 
+/** 입력한 티커를 대문자·이전 티커 → 현재 티커로 맞춘다 (주소 인코딩은 풀지 않음 — 주소 값은 decodeParam 을 한 번만 거친다) */
 export function normalizeSymbol(s: string): string {
-  const up = decodeURIComponent(s).trim().toUpperCase();
+  const up = String(s ?? "").trim().toUpperCase();
   return alias.get(up) ?? up;
+}
+
+/** 주소 경로·쿼리에서 온 값을 한 번만 디코딩 (잘못된 % 인코딩이면 원래 문자열) */
+export function decodeParam(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 export function getInstrument(symbol: string): InstrumentConfig | undefined {

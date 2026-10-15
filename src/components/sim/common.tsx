@@ -238,8 +238,10 @@ export function categoryOf(symbol: string): string {
 /** 표를 CSV 파일로 저장 (브라우저 안에서 만들고 서버로 보내지 않음). 엑셀에서 한글이 깨지지 않게 BOM 을 붙인다 */
 export function downloadCsv(filename: string, rows: (string | number | null | undefined)[][]) {
   const esc = (v: string | number | null | undefined) => {
-    const s = v === null || v === undefined ? "" : typeof v === "number" ? (Number.isFinite(v) ? String(Math.round(v * 100) / 100) : "") : v;
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    let s = v === null || v === undefined ? "" : typeof v === "number" ? (Number.isFinite(v) ? String(Math.round(v * 100) / 100) : "") : v;
+    // 스프레드시트 수식 주입 방지: =, +, -, @, 탭, CR 로 시작하는 글자 칸은 ' 를 붙여 글자로 둔다 (숫자 칸은 그대로)
+    if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const blob = new Blob(["﻿" + rows.map((r) => r.map(esc).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");

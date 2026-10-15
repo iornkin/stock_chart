@@ -131,9 +131,9 @@ export default function SettingsClient() {
         <div>
           <p className="mb-1 text-sm text-ink-2">차트 기본 설정</p>
           <p className="text-xs text-muted">
-            현재: {prefs.chart.type === "candle" ? "캔들" : prefs.chart.type === "line" ? "라인" : "영역"} · SMA {prefs.chart.smaPeriods.join(", ") || "없음"} · EMA {prefs.chart.emaPeriods.join(", ") || "없음"} · RSI {prefs.chart.showRSI ? prefs.chart.rsiPeriod : "끔"} · MACD {prefs.chart.showMACD ? `${prefs.chart.macdFast}/${prefs.chart.macdSlow}/${prefs.chart.macdSignal}` : "끔"}
+            현재: {prefs.chart.type === "candle" ? "캔들" : prefs.chart.type === "line" ? "라인" : "영역"} · 지표 {prefs.chart.indicators.map((x) => `${x.key.toUpperCase()}${Object.values(x.params).length ? `(${Object.values(x.params).join(",")})` : ""}${x.hidden ? " 숨김" : ""}`).join(", ") || "없음"} · 저장한 구성 {prefs.chart.saved.length}개
           </p>
-          <p className="text-xs text-muted">차트 위의 &lsquo;지표 설정&rsquo;에서 변경하면 자동 저장됩니다.</p>
+          <p className="text-xs text-muted">차트 위의 &lsquo;지표 · 설정&rsquo;에서 바꾸면 이 브라우저에 자동 저장됩니다.</p>
           <button type="button" className="mt-2 rounded-md border border-line px-3 py-1.5 text-sm" onClick={() => setPrefs({ chart: DEFAULT_PREFS.chart })}>
             차트 설정 초기화
           </button>

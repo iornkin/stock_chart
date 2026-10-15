@@ -1,10 +1,12 @@
 "use client";
 /** 미래 포트폴리오 시뮬레이터 — 가정에 따른 시나리오 계산과 과거 수익률 기반 몬테카를로 (예측 아님) */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useIncome, usePortfolio, useRuns, useSeriesMap, useStrategies } from "@/lib/client/user-data";
+import { useFx, useIncome, usePortfolio, useRuns, useSeriesMap, useStrategies } from "@/lib/client/user-data";
+import { ENGINE_VERSION } from "@/lib/sim/repro";
 import { usePortfolioSummary } from "@/lib/client/portfolio-summary";
 import {
   DEFAULT_TOTAL_RETURN,
+  futureSensitivity,
   historicalPriceCagr,
   historicalReturnStats,
   monthlyHistory,
@@ -27,7 +29,7 @@ import { REBALANCE_KO, type Rebalance } from "@/lib/sim/backtest";
 import { quantile } from "@/lib/sim/metrics";
 import { getInstrument } from "@/lib/instruments";
 import { Notice, Section } from "@/components/ui";
-import { Disclaimer, downloadCsv, Field, parseNum, pct, rowsFrom, rowsProblem, rowsToItems, Seg, tone, usd } from "./common";
+import { Disclaimer, downloadCsv, Field, krw, parseNum, pct, rowsFrom, rowsProblem, rowsToItems, Seg, tone, usd } from "./common";
 import { SimLineChart, SERIES_VARS } from "./charts";
 import PortfolioInputs, { defaultPortfolios, type PortfolioInput } from "./PortfolioInputs";
 import BarChartSvg from "@/components/BarChartSvg";
@@ -86,6 +88,7 @@ export default function FutureClient() {
   const portfolio = usePortfolio();
   const mine = usePortfolioSummary(portfolio.value);
   const runs = useRuns();
+  const fxNow = useFx().rate;
 
   useEffect(() => {
     if (!strategies.loaded) return;
@@ -351,7 +354,7 @@ export default function FutureClient() {
             </details>
           </Section>
 
-          <ScenarioResults results={results} scenario={scenario} setScenario={setScenario} focus={focus} setFocus={setFocus} reinvest={reinvest} months={months} taxPct={parseNum(tax)} onSave={(title, summary) => runs.add({ kind: "future", title, summary })} />
+          <ScenarioResults results={results} scenario={scenario} setScenario={setScenario} focus={focus} setFocus={setFocus} reinvest={reinvest} months={months} taxPct={parseNum(tax)} baseCfg={base} fx={fxNow} onSave={(title, summary) => runs.add({ kind: "future", title, summary, meta: { engine: ENGINE_VERSION, assumptions: [`기간 ${months}개월`, `가정 방식 ${mode}`, `세율 ${tax}%`, `거래 비용 ${cost}%`, `연 비용 ${fee}%`] } })} />
           <Disclaimer>
             예측이 아닌 시나리오 계산이며 수익을 보장하지 않습니다. 계산 기준: 매달 평가금액 × (1 + 연 가격 수익률)^(1/12). 분배금 = 그 달 평가금액 × 연 분배금 수익률 × (그 달 지급 비중). 가격 수익률은 분배금을 뺀 가격 변화이므로 분배금을 따로 더해도 이중 계산이 아닙니다. 세금은 분배금에서 원천징수, 거래 비용은 매수·재투자·리밸런싱 금액에 부과. 분배금은 바뀔 수 있으며 높은 분배금 수익률이 높은 총수익률을 뜻하지 않습니다.
           </Disclaimer>
@@ -417,7 +420,7 @@ function HistoryTable({ symbols, hist, windowYears, rates, yieldOf, loading }: {
   );
 }
 
-function ScenarioResults({ results, scenario, setScenario, focus, setFocus, reinvest, months, taxPct, onSave }: { results: ResultRow[]; scenario: ScenarioId; setScenario: (s: ScenarioId) => void; focus: number; setFocus: (n: number) => void; reinvest: boolean; months: number; taxPct: number; onSave: (t: string, s: { label: string; value: string }[]) => void }) {
+function ScenarioResults({ results, scenario, setScenario, focus, setFocus, reinvest, months, taxPct, baseCfg, fx, onSave }: { results: ResultRow[]; scenario: ScenarioId; setScenario: (s: ScenarioId) => void; focus: number; setFocus: (n: number) => void; reinvest: boolean; months: number; taxPct: number; baseCfg: Omit<FutureConfig, "holdings">; fx: number | null; onSave: (t: string, s: { label: string; value: string }[]) => void }) {
   const errs = results.filter((r): r is { p: PortfolioInput; error: string } => "error" in r);
   if (errs.length) return <Notice tone="critical" title="계산하지 않았습니다">{errs.map((e) => `포트폴리오 ${e.p.key}: ${e.error}`).join(" / ")}</Notice>;
   const ok = results as { p: PortfolioInput; per: PerScenario }[];
@@ -735,6 +738,7 @@ function ScenarioResults({ results, scenario, setScenario, focus, setFocus, rein
           { key: "chart", label: "월별 자산", content: monthlyChart },
           { key: "income", label: "분배금 (종목별)", content: incomePanel },
           { key: "compare", label: "포트폴리오 비교", content: comparePanel },
+          { key: "sens", label: "가정 민감도", content: <SensitivityPanel cfg={{ ...baseCfg, holdings: f.per[scenario].holdings }} fx={fx} name={`${f.p.key}. ${f.p.name} · ${SCEN_KO[scenario]}`} /> },
         ]}
       />
     </Section>
@@ -1072,5 +1076,48 @@ function MonteCarloPanel({
         </Section>
       )}
     </>
+  );
+}
+
+/** 가정 하나씩 바꿔 다시 계산 — 결과가 어떤 가정에 가장 민감한지 */
+function SensitivityPanel({ cfg, fx, name }: { cfg: FutureConfig; fx: number | null; name: string }) {
+  const { base, rows } = useMemo(() => futureSensitivity(cfg, { fx }), [cfg, fx]);
+  const sorted = [...rows].sort((a, b) => Math.abs(b.diffValuePct) - Math.abs(a.diffValuePct));
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs text-ink-2">
+        {name} · 기준: 기간 말 {usd(base.finalValue, 0)}, 마지막 12개월 월 분배금(세후) {usd(base.avgMonthlyIncomeNet, 0)}. 한 번에 가정 하나만 바꾸고 나머지는 그대로 둔 결과입니다 (영향이 큰 순).
+      </p>
+      <div className="overflow-x-auto">
+        <table className="table-basic">
+          <thead>
+            <tr>
+              <th>바꾼 가정</th>
+              <th className="r">기간 말 자산</th>
+              <th className="r">차이</th>
+              <th className="r">월 분배금 (세후)</th>
+              <th className="r">차이</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r) => (
+              <tr key={r.key}>
+                <td>
+                  <p className="font-semibold">{r.label}</p>
+                  <p className="text-[11px] text-muted">{r.change}</p>
+                </td>
+                <td className="r num">{r.key.startsWith("fx") ? `${krw(base.finalValue * (fx ?? 0) * (1 + r.diffValuePct / 100))}` : usd(r.finalValue, 0)}</td>
+                <td className={`r num ${tone(r.diffValuePct)}`}>
+                  {r.key.startsWith("fx") ? "" : `${usd(r.diffValue, 0)} `}({pct(r.diffValuePct, 1)})
+                </td>
+                <td className="r num">{usd(r.monthlyIncomeNet, 0)}</td>
+                <td className={`r num ${tone(r.diffIncome)}`}>{usd(r.diffIncome, 0)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-muted">가정에 따른 계산이며 미래 수익을 보장하지 않습니다. 여러 가정이 함께 나빠지면 영향은 이보다 클 수 있습니다 (스트레스 테스트·위험 예산 참고).</p>
+    </div>
   );
 }

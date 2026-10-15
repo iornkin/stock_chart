@@ -19,7 +19,8 @@ import { INSTRUMENTS } from "@/config/instruments";
 import { featureChecks } from "./features";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
-const OUT = process.env.E2E_OUT ?? fs.mkdtempSync(path.join(os.tmpdir(), "usi-e2e-"));
+const OUT = path.resolve(process.env.E2E_OUT ?? fs.mkdtempSync(path.join(os.tmpdir(), "usi-e2e-")));
+fs.mkdirSync(OUT, { recursive: true });
 const MOCK = 4010;
 const APP = 3100;
 const M = `http://127.0.0.1:${MOCK}`;
@@ -234,7 +235,11 @@ async function main() {
     await page.waitForTimeout(800);
     check("차트: 전체 기간(월봉) 전환", (await textOf(page)).includes("월봉"));
     await page.getByRole("button", { name: "라인", exact: true }).click();
-    await page.getByRole("button", { name: "볼린저", exact: true }).click();
+    // 지표 추가: '지표 N개 · 설정' → 볼린저 밴드 선택 → 추가
+    await page.getByRole("button", { name: /지표 \d+개 · 설정/ }).click();
+    const pick = page.getByLabel("추가할 지표");
+    await pick.selectOption("bb");
+    await pick.locator("xpath=ancestor::label/following-sibling::button[1]").click();
     await page.waitForTimeout(500);
     const legendTxt = await page.locator("main").innerText();
     check("차트: 라인·볼린저 밴드 표시", legendTxt.includes("BB 상단"));
@@ -267,6 +272,7 @@ async function main() {
     t = await textOf(page);
     check("레버리지 분석: 하루 목표 설명·기간별 수익률·급락 구간·1년 분포", t.includes("왜 기간 수익률 × 배수가 아닌가요") && t.includes("기간별 수익률") && t.includes("급락 구간의 손실과 회복") && t.includes("1년 보유했을 때") && t.includes("배수 대비"));
     check("레버리지 분석: QQQ·QLD·TQQQ 같은 기간 비교 차트", t.includes("QQQ") && t.includes("QLD") && t.includes("TQQQ") && (await page.locator("canvas").count()) > 0);
+    check("레버리지 분석: 횡보장 vs 추세장 (실제 − 기준×배수)", t.includes("횡보장 vs 추세장") && t.includes("차이 (%p)"));
     await page.getByRole("tab", { name: /S&P 500/ }).click();
     check("레버리지 분석: S&P 500 묶음", (await textOf(page)).includes("UPRO"));
     await page.screenshot({ path: path.join(OUT, "desktop-leverage.png"), fullPage: true });

@@ -25,6 +25,8 @@ export interface PriceSeries {
   dates: string[];
   close: number[];
   divs: SeriesDiv[];
+  /** 주식분할 (date = 분할 반영 첫 거래일, ratio = 분할 후 주식 수 ÷ 분할 전, 예: 3:1 → 3). close 는 이미 반영돼 있다 */
+  splits?: { date: string; ratio: number }[];
   source: string | null;
   fetchedAt: number | null;
   error?: string;
@@ -37,6 +39,7 @@ export interface SeriesWire {
   gaps: number[];
   close: number[];
   divs: [string, string | null, number, string][];
+  splits?: [string, number][];
   source: string | null;
   fetchedAt: number | null;
   error?: string;
@@ -54,6 +57,7 @@ export function encodeSeries(s: PriceSeries): SeriesWire {
     gaps,
     close: s.close.map(sig),
     divs: s.divs.map((d) => [d.ex, d.pay, sig(d.amount), d.kind]),
+    ...(s.splits?.length ? { splits: s.splits.map((x) => [x.date, sig(x.ratio)] as [string, number]) } : {}),
     source: s.source,
     fetchedAt: s.fetchedAt,
     ...(s.error ? { error: s.error } : {}),
@@ -76,6 +80,7 @@ export function decodeSeries(w: SeriesWire): PriceSeries {
     dates,
     close: w.close,
     divs: w.divs.map(([ex, pay, amount, kind]) => ({ ex, pay, amount, kind })),
+    splits: (w.splits ?? []).map(([date, ratio]) => ({ date, ratio })),
     source: w.source,
     fetchedAt: w.fetchedAt,
     ...(w.error ? { error: w.error } : {}),
@@ -134,6 +139,31 @@ export function closeOn(s: PriceSeries, date: string): { date: string; close: nu
 /** 정기 지급(특별·자본이득 제외) 여부 */
 export function isRegularDiv(d: SeriesDiv): boolean {
   return d.kind === "regular" || d.kind === "unknown";
+}
+
+/**
+ * 총수익 지수 — 이 사이트의 모든 총수익률 계산이 쓰는 하나의 정의
+ * - from 위치의 값 = 1, i 번째 값 = 직전 값 × (종가_i + 그 사이 배당락 분배금) ÷ 종가_(i−1)
+ * - '그 사이' = 직전 거래일 다음 날 ~ 오늘(포함). 배당락일에 가격 기록이 없어도(휴장·누락) 다음 거래일에 반영해 빠뜨리지 않는다.
+ * - 분배금을 배당락일 종가로 재투자했다고 보는 지수이며 세금·거래 비용은 넣지 않는다.
+ * - 가격이 0 이하이거나 숫자가 아니면 그 구간은 직전 값을 유지한다(수익률을 만들어 내지 않음).
+ */
+export function trIndex(x: { dates: string[]; close: number[]; divs: { ex: string; amount: number }[] }, from = 0, to = x.dates.length - 1): number[] {
+  if (from < 0 || to < from || to >= x.dates.length) return [];
+  const divs = [...x.divs].filter((d) => Number.isFinite(d.amount)).sort((a, b) => (a.ex < b.ex ? -1 : a.ex > b.ex ? 1 : 0));
+  let p = 0;
+  while (p < divs.length && divs[p].ex <= x.dates[from]) p++;
+  const out = [1];
+  let idx = 1;
+  for (let i = from + 1; i <= to; i++) {
+    let d = 0;
+    while (p < divs.length && divs[p].ex <= x.dates[i]) d += divs[p++].amount;
+    const c0 = x.close[i - 1];
+    const c1 = x.close[i];
+    if (c0 > 0 && Number.isFinite(c0) && Number.isFinite(c1) && c1 >= 0) idx *= (c1 + d) / c0;
+    out.push(idx);
+  }
+  return out;
 }
 
 /** 기간 (시작일 미포함, 종료일 포함) 안의 배당락 */

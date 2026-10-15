@@ -9,7 +9,7 @@
  */
 import { computeLedger, ledgerTimeline, sortTxns } from "./ledger";
 import type { Txn } from "./types";
-import { indexOnOrAfter, indexOnOrBefore, type PriceSeries } from "@/lib/sim/series";
+import { indexOnOrAfter, indexOnOrBefore, trIndex, type PriceSeries } from "@/lib/sim/series";
 import { cagrPct, xirrPct, yearsBetween } from "@/lib/sim/metrics";
 
 export interface ExternalFlow {
@@ -90,11 +90,7 @@ export function timeWeightedReturn(values: number[], contributed: number[]): num
 
 /** 분배금을 재투자한 총수익 지수 (배당락일 종가에 재투자) */
 export function totalReturnIndex(s: PriceSeries): number[] {
-  const divByDate = new Map<string, number>();
-  for (const d of s.divs) divByDate.set(d.ex, (divByDate.get(d.ex) ?? 0) + d.amount);
-  const tri = [1];
-  for (let i = 1; i < s.dates.length; i++) tri.push(tri[i - 1] * ((s.close[i] + (divByDate.get(s.dates[i]) ?? 0)) / s.close[i - 1]));
-  return tri;
+  return trIndex(s);
 }
 
 /** 같은 외부 입출금을 벤치마크(분배금 재투자)로 했다면 */

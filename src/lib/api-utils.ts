@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { env } from "./env";
 import { MARKET_SYMBOLS } from "@/config/instruments";
-import { isSupported, normalizeSymbol } from "./instruments";
+import { decodeParam, getInstrument, normalizeSymbol } from "./instruments";
 
 export function json(data: unknown, init: ResponseInit = {}) {
   return Response.json(data, { ...init, headers: { "Cache-Control": "no-store", ...(init.headers ?? {}) } });
@@ -11,12 +11,12 @@ export function errorJson(status: number, message: string) {
   return json({ error: message }, { status });
 }
 
-/** 지원 종목 + 시장 지표 심볼만 허용 */
+/** 지원 종목 + 시장 지표 심볼만 허용 — 입력값이 아니라 설정 파일의 심볼을 돌려준다 (한 번만 디코딩) */
 export function allowedSymbol(raw: string): string | null {
-  const s = normalizeSymbol(raw);
-  if (isSupported(s)) return s;
-  if (MARKET_SYMBOLS.some((m) => m.symbol === s)) return s;
-  return null;
+  const s = normalizeSymbol(decodeParam(raw));
+  const inst = getInstrument(s);
+  if (inst) return inst.symbol;
+  return MARKET_SYMBOLS.find((m) => m.symbol === s)?.symbol ?? null;
 }
 
 export function checkAdmin(req: Request): Response | null {

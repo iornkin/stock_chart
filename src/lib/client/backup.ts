@@ -52,6 +52,16 @@ export async function collectBundle(): Promise<UserBundle> {
 }
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
+const finiteOrMissing = (v: unknown) => v === undefined || v === null || (typeof v === "number" && Number.isFinite(v));
+const TXN_TYPES = ["buy", "sell", "deposit", "withdraw", "dividend", "reinvest", "opening"];
+
+/** 거래 한 건의 기본 형식 (종류·날짜·숫자 칸) — 값이 맞는지는 불러온 뒤 데이터 점검이 따로 본다 */
+function validTxn(t: unknown): boolean {
+  if (!isObj(t)) return false;
+  if (typeof t.id !== "string" || !TXN_TYPES.includes(String(t.type)) || typeof t.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(t.date)) return false;
+  if (t.symbol !== undefined && typeof t.symbol !== "string") return false;
+  return ["shares", "price", "amount", "fee", "tax", "fx"].every((k) => finiteOrMissing(t[k]));
+}
 
 /** 불러온 파일 형식 확인 — 모르는 형식이나 깨진 구조는 적용하지 않는다 */
 export function validateBundle(x: unknown): { ok: true; bundle: UserBundle; summary: string[] } | { ok: false; error: string } {
@@ -66,38 +76,65 @@ export function validateBundle(x: unknown): { ok: true; bundle: UserBundle; summ
     const p = d.portfolio;
     if (!isObj(p) || (p.mode !== "simple" && p.mode !== "ledger") || !isObj(p.simple) || !Array.isArray((p.simple as Record<string, unknown>).holdings) || !Array.isArray(p.ledger))
       return { ok: false, error: "내 자산 데이터 형식이 올바르지 않습니다." };
+    const badTxn = (p.ledger as unknown[]).findIndex((t) => !validTxn(t));
+    if (badTxn >= 0) return { ok: false, error: `거래 내역 ${badTxn + 1}번째 항목의 형식이 올바르지 않습니다 (종류·날짜·숫자 확인).` };
+    const badH = ((p.simple as Record<string, unknown>).holdings as unknown[]).findIndex((h) => !isObj(h) || typeof h.symbol !== "string" || !finiteOrMissing(h.shares) || !finiteOrMissing(h.avgCost));
+    if (badH >= 0) return { ok: false, error: `보유 종목 ${badH + 1}번째 항목의 형식이 올바르지 않습니다.` };
     summary.push(`내 자산: ${p.mode === "ledger" ? `거래 ${(p.ledger as unknown[]).length}건` : `보유 종목 ${((p.simple as Record<string, unknown>).holdings as unknown[]).length}개`}`);
   }
   // 예전 백업의 가상 투자 기록은 기능을 없앴으므로 복원하지 않는다
   if (d.virtual !== undefined) summary.push("가상 투자 기록: 더 이상 쓰지 않아 건너뜀");
   if (d.strategies !== undefined) {
-    if (!Array.isArray(d.strategies) || d.strategies.some((s) => !isObj(s) || typeof s.name !== "string" || !Array.isArray(s.items))) return { ok: false, error: "전략 데이터 형식이 올바르지 않습니다." };
+    if (!Array.isArray(d.strategies) || d.strategies.some((s) => !isObj(s) || typeof s.name !== "string" || !Array.isArray(s.items) || s.items.some((i) => !isObj(i) || typeof i.symbol !== "string" || !finiteOrMissing(i.weight))))
+      return { ok: false, error: "전략 데이터 형식이 올바르지 않습니다." };
     summary.push(`전략: ${d.strategies.length}개`);
   }
-  if (d.runs !== undefined && !Array.isArray(d.runs)) return { ok: false, error: "최근 계산 결과 형식이 올바르지 않습니다." };
+  if (d.runs !== undefined && (!Array.isArray(d.runs) || d.runs.some((r) => !isObj(r)))) return { ok: false, error: "최근 계산 결과 형식이 올바르지 않습니다." };
   if (d.journal !== undefined) {
     if (!Array.isArray(d.journal) || d.journal.some((j) => !isObj(j) || typeof j.symbol !== "string" || typeof j.date !== "string" || !Array.isArray(j.reviews))) return { ok: false, error: "투자 기록 형식이 올바르지 않습니다." };
     summary.push(`투자 기록: ${d.journal.length}건`);
   }
   if (d.alerts !== undefined) {
     const a = d.alerts;
-    if (!isObj(a) || !Array.isArray(a.rules) || !Array.isArray(a.log) || !isObj(a.baseline)) return { ok: false, error: "알림 데이터 형식이 올바르지 않습니다." };
+    if (!isObj(a) || !Array.isArray(a.rules) || !Array.isArray(a.log) || !isObj(a.baseline) || a.rules.some((r) => !isObj(r) || typeof r.kind !== "string")) return { ok: false, error: "알림 데이터 형식이 올바르지 않습니다." };
     summary.push(`알림 규칙: ${a.rules.length}개`);
   }
-  const browser = isObj(x.browser) ? Object.fromEntries(Object.entries(x.browser).filter(([k, v]) => k.startsWith("usi-") && typeof v === "string")) : {};
+  // usi-local:* 는 IndexedDB 를 못 쓸 때의 저장 사본이라 파일에서 직접 덮어쓰지 않는다 (위 data 검증을 우회하지 않도록)
+  const browser = isObj(x.browser) ? Object.fromEntries(Object.entries(x.browser).filter(([k, v]) => k.startsWith("usi-") && !k.startsWith("usi-local:") && typeof v === "string")) : {};
   if (Object.keys(browser).length) summary.push(`화면 설정·관심 종목 등 ${Object.keys(browser).length}개 항목`);
   return { ok: true, bundle: { format: BUNDLE_FORMAT, version: 1, exportedAt: String(x.exportedAt ?? ""), data: d as UserBundle["data"], browser: browser as Record<string, string> }, summary };
 }
 
-/** 현재 데이터를 모두 지우고 파일 내용으로 바꾼다 */
-export async function restoreBundle(b: UserBundle): Promise<void> {
+async function writeBundle(b: UserBundle): Promise<void> {
   await clearLocal();
   for (const k of LOCAL_KEYS) if (b.data[k] !== undefined) await writeLocal(k, b.data[k]);
+  let ls: Storage | null = null;
   try {
-    for (const k of Object.keys(localStorage)) if (k.startsWith("usi-") && !k.startsWith("usi-local:")) localStorage.removeItem(k);
-    for (const [k, v] of Object.entries(b.browser)) localStorage.setItem(k, v);
+    ls = localStorage;
   } catch {
     /* 접근 불가 */
+  }
+  if (!ls) return;
+  for (const k of Object.keys(ls)) if (k.startsWith("usi-") && !k.startsWith("usi-local:")) ls.removeItem(k);
+  for (const [k, v] of Object.entries(b.browser)) ls.setItem(k, v);
+}
+
+/**
+ * 현재 데이터를 모두 지우고 파일 내용으로 바꾼다.
+ * 쓰기 도중 실패하면(저장 공간 부족 등) 시작 전에 떠 둔 사본으로 되돌리고 오류를 알린다 → 기존 데이터를 잃지 않는다.
+ */
+export async function restoreBundle(b: UserBundle): Promise<void> {
+  const before = await collectBundle();
+  try {
+    await writeBundle(b);
+  } catch (e) {
+    const why = (e as Error)?.message ?? String(e);
+    try {
+      await writeBundle(before);
+    } catch {
+      throw new Error(`복원하지 못했고(${why}), 이전 데이터로 되돌리는 것도 실패했습니다. 미리 내려받은 백업 파일로 다시 시도하세요.`);
+    }
+    throw new Error(`복원하지 못해(${why}) 이전 데이터로 되돌렸습니다. 바뀐 것은 없습니다.`);
   }
 }
 

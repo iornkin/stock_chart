@@ -64,7 +64,18 @@ export const SECTIONS: NavSection[] = [
       { href: "/report", label: "투자 보고서" },
     ],
   },
-  { key: "backtest", group: "전략 연구", label: "백테스팅", short: "백테스트", href: "/backtest", icon: "M3 12a9 9 0 109-9 9 9 0 00-6.4 2.6L3 8M3 3v5h5M12 7v5l3 2", pages: [] },
+  {
+    key: "backtest",
+    group: "전략 연구",
+    label: "백테스팅",
+    short: "백테스트",
+    href: "/backtest",
+    icon: "M3 12a9 9 0 109-9 9 9 0 00-6.4 2.6L3 8M3 3v5h5M12 7v5l3 2",
+    pages: [
+      { href: "/backtest", label: "포트폴리오 백테스트" },
+      { href: "/backtest/strategy", label: "지표 전략 검증" },
+    ],
+  },
   {
     key: "simulate",
     group: "전략 연구",

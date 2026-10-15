@@ -3,148 +3,10 @@
  * 입력 배열 길이와 같은 길이의 배열을 반환하며, 계산 불가 구간은 null.
  */
 
-export type Series = (number | null)[];
-
-export function sma(values: number[], period: number): Series {
-  const out: Series = new Array(values.length).fill(null);
-  if (period <= 0) return out;
-  let sum = 0;
-  for (let i = 0; i < values.length; i++) {
-    sum += values[i];
-    if (i >= period) sum -= values[i - period];
-    if (i >= period - 1) out[i] = sum / period;
-  }
-  return out;
-}
-
-export function ema(values: number[], period: number): Series {
-  const out: Series = new Array(values.length).fill(null);
-  if (period <= 0 || values.length < period) return out;
-  const k = 2 / (period + 1);
-  let seed = 0;
-  for (let i = 0; i < period; i++) seed += values[i];
-  let prev = seed / period;
-  out[period - 1] = prev;
-  for (let i = period; i < values.length; i++) {
-    prev = values[i] * k + prev * (1 - k);
-    out[i] = prev;
-  }
-  return out;
-}
-
-/** RSI (Wilder 평활) */
-export function rsi(closes: number[], period = 14): Series {
-  const out: Series = new Array(closes.length).fill(null);
-  if (closes.length <= period) return out;
-  let gain = 0;
-  let loss = 0;
-  for (let i = 1; i <= period; i++) {
-    const d = closes[i] - closes[i - 1];
-    if (d >= 0) gain += d;
-    else loss -= d;
-  }
-  let avgG = gain / period;
-  let avgL = loss / period;
-  out[period] = avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL);
-  for (let i = period + 1; i < closes.length; i++) {
-    const d = closes[i] - closes[i - 1];
-    avgG = (avgG * (period - 1) + Math.max(d, 0)) / period;
-    avgL = (avgL * (period - 1) + Math.max(-d, 0)) / period;
-    out[i] = avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL);
-  }
-  return out;
-}
-
-export interface MacdResult {
-  macd: Series;
-  signal: Series;
-  hist: Series;
-}
-
-export function macd(closes: number[], fast = 12, slow = 26, signalPeriod = 9): MacdResult {
-  const ef = ema(closes, fast);
-  const es = ema(closes, slow);
-  const line: Series = closes.map((_, i) => (ef[i] !== null && es[i] !== null ? (ef[i] as number) - (es[i] as number) : null));
-  const start = line.findIndex((v) => v !== null);
-  const signal: Series = new Array(closes.length).fill(null);
-  if (start >= 0) {
-    const compact = line.slice(start) as number[];
-    const sig = ema(compact, signalPeriod);
-    for (let i = 0; i < sig.length; i++) signal[start + i] = sig[i];
-  }
-  const hist: Series = line.map((v, i) => (v !== null && signal[i] !== null ? v - (signal[i] as number) : null));
-  return { macd: line, signal, hist };
-}
-
-export interface BollingerResult {
-  mid: Series;
-  upper: Series;
-  lower: Series;
-}
-
-export function bollinger(closes: number[], period = 20, mult = 2): BollingerResult {
-  const mid = sma(closes, period);
-  const upper: Series = new Array(closes.length).fill(null);
-  const lower: Series = new Array(closes.length).fill(null);
-  for (let i = period - 1; i < closes.length; i++) {
-    const m = mid[i] as number;
-    let v = 0;
-    for (let j = i - period + 1; j <= i; j++) v += (closes[j] - m) ** 2;
-    const sd = Math.sqrt(v / period);
-    upper[i] = m + mult * sd;
-    lower[i] = m - mult * sd;
-  }
-  return { mid, upper, lower };
-}
-
-export interface OhlcvLike {
-  t: number;
-  h: number;
-  l: number;
-  c: number;
-  v: number;
-}
-
-/** 세션(거래일) 단위로 초기화되는 VWAP — 분봉 차트용 */
-export function sessionVwap(bars: OhlcvLike[], sessionKey: (t: number) => string): Series {
-  const out: Series = new Array(bars.length).fill(null);
-  let key = "";
-  let pv = 0;
-  let vol = 0;
-  for (let i = 0; i < bars.length; i++) {
-    const b = bars[i];
-    const k = sessionKey(b.t);
-    if (k !== key) {
-      key = k;
-      pv = 0;
-      vol = 0;
-    }
-    const tp = (b.h + b.l + b.c) / 3;
-    pv += tp * b.v;
-    vol += b.v;
-    out[i] = vol > 0 ? pv / vol : null;
-  }
-  return out;
-}
-
-/** N 기간 이동 VWAP — 일봉 이상 차트용 */
-export function rollingVwap(bars: OhlcvLike[], period = 20): Series {
-  const out: Series = new Array(bars.length).fill(null);
-  let pv = 0;
-  let vol = 0;
-  for (let i = 0; i < bars.length; i++) {
-    const tp = (bars[i].h + bars[i].l + bars[i].c) / 3;
-    pv += tp * bars[i].v;
-    vol += bars[i].v;
-    if (i >= period) {
-      const o = bars[i - period];
-      pv -= ((o.h + o.l + o.c) / 3) * o.v;
-      vol -= o.v;
-    }
-    if (i >= period - 1 && vol > 0) out[i] = pv / vol;
-  }
-  return out;
-}
+// 이동평균·RSI·MACD·볼린저는 기술적 지표 모듈(ta.ts)의 정의 하나만 쓴다 (차트·브리핑·백테스트 공통)
+export { sma, ema, rsi, macd, bollinger, type Series, type MacdResult, type BandResult as BollingerResult } from "./ta";
+import { drawdown } from "./sim/metrics";
+import type { Series } from "./ta";
 
 /** 연환산 실현 변동성 (로그수익률 표준편차 × √252) */
 export function realizedVol(closes: number[], window = 20, periodsPerYear = 252): number | null {
@@ -156,20 +18,11 @@ export function realizedVol(closes: number[], window = 20, periodsPerYear = 252)
   return Math.sqrt(v) * Math.sqrt(periodsPerYear);
 }
 
+/** 최대 낙폭 (고점 대비 저점, 비율) — 계산은 sim/metrics 의 drawdown 하나로 통일 */
 export function maxDrawdown(values: number[]): { mdd: number; peakIndex: number; troughIndex: number } | null {
   if (values.length < 2) return null;
-  let peak = values[0];
-  let peakI = 0;
-  let best = { mdd: 0, peakIndex: 0, troughIndex: 0 };
-  for (let i = 1; i < values.length; i++) {
-    if (values[i] > peak) {
-      peak = values[i];
-      peakI = i;
-    }
-    const dd = values[i] / peak - 1;
-    if (dd < best.mdd) best = { mdd: dd, peakIndex: peakI, troughIndex: i };
-  }
-  return best;
+  const d = drawdown(values);
+  return { mdd: d.mddPct / 100, peakIndex: d.peakIndex, troughIndex: d.troughIndex };
 }
 
 export interface LevelCandidate {

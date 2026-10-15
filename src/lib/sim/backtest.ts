@@ -13,7 +13,7 @@
  */
 import { daysBetween } from "@/lib/time";
 import { annualVolPct, cagrPct, dailyReturns, drawdown, periodReturns, sharpe, xirrPct, yearsBetween } from "./metrics";
-import { closeOn, indexOnOrAfter, indexOnOrBefore, type PriceSeries } from "./series";
+import { closeOn, indexOnOrAfter, indexOnOrBefore, trIndex, type PriceSeries } from "./series";
 import { capitalGainsTax, CostBook, type CostMethod } from "@/lib/portfolio/tax";
 
 export type Rebalance = "none" | "monthly" | "quarterly" | "semiannual" | "annual";
@@ -616,20 +616,9 @@ export function fullPeriodStat(x: PriceSeries): FullPeriodStat | null {
   };
 }
 
-/** 분배금을 배당락일 종가로 재투자한 총수익 지수 (from 위치 = 1) */
+/** 분배금을 배당락일 종가로 재투자한 총수익 지수 (from 위치 = 1) — 공통 정의(trIndex) 사용 */
 export function totalReturnPath(x: PriceSeries, from: number, to: number): number[] {
-  const out = [1];
-  const divs = [...x.divs].sort((a, b) => a.ex.localeCompare(b.ex));
-  let p = 0;
-  while (p < divs.length && divs[p].ex <= x.dates[from]) p++;
-  let idx = 1;
-  for (let i = from + 1; i <= to; i++) {
-    let d = 0;
-    while (p < divs.length && divs[p].ex <= x.dates[i]) d += divs[p++].amount;
-    idx *= (x.close[i] + d) / x.close[i - 1];
-    out.push(idx);
-  }
-  return out;
+  return trIndex(x, from, to);
 }
 
 export interface KrwView {
