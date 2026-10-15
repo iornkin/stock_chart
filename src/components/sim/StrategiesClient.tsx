@@ -9,6 +9,7 @@ import { getInstrument } from "@/lib/instruments";
 import { downloadJson, readJsonFile } from "@/lib/client/backup";
 import { Empty, Notice, Section } from "@/components/ui";
 import { Disclaimer, Field, HoldingsEditor, LocalOnlyNote, pct, PRESETS, rowsFrom, rowsProblem, rowsToItems, Seg, tone, usd, type WeightRow } from "./common";
+import { ENGINE_VERSION } from "@/lib/sim/repro";
 import { SimLineChart, SERIES_VARS } from "./charts";
 
 export default function StrategiesClient() {
@@ -195,6 +196,18 @@ export default function StrategiesClient() {
                     </div>
                   ))}
                 </dl>
+                {r.meta ? (
+                  <p className="mt-1 text-[10px] leading-relaxed text-muted" title="같은 계산 방식·설정 코드·데이터 코드면 같은 결과가 나와야 합니다. 다르면 데이터가 새로 수집됐거나 계산 방식이 바뀐 것입니다.">
+                    재현 정보: 계산 방식 {r.meta.engine}
+                    {r.meta.engine !== ENGINE_VERSION && <span className="text-warn"> (지금 {ENGINE_VERSION} — 계산 방식이 바뀜)</span>}
+                    {r.meta.dataFrom ? ` · 데이터 ${r.meta.dataFrom}~${r.meta.dataTo}` : ""}
+                    {r.meta.dataCode ? ` · 데이터 코드 ${r.meta.dataCode}` : ""}
+                    {r.meta.configCode ? ` · 설정 코드 ${r.meta.configCode}` : ""}
+                    {r.meta.assumptions?.length ? ` · ${r.meta.assumptions.join(", ")}` : ""}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[10px] text-muted">재현 정보 없음 (이전 버전에서 저장)</p>
+                )}
                 <button type="button" className="btn btn-sm mt-2" onClick={() => runs.set((cur) => cur.filter((x) => x.id !== r.id))}>
                   삭제
                 </button>

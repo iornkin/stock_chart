@@ -101,7 +101,7 @@ export default async function StatusPage() {
               </table>
             </div>
             <p className="mt-2 text-xs text-muted">
-              {IS_STATIC ? "자동 실행: GitHub Actions 예약 실행" : `워커: ${alive ? `실행 중 (${lock?.owner})` : "중지"} · 대기 중인 수동 요청 ${pendingRequests()}건`} · 시장 <MarketPhaseText at={renderedAt} /> · 다가오는 휴장일:{" "}
+              {IS_STATIC ? "자동 실행: GitHub Actions 예약 실행" : `워커: ${alive ? "실행 중" : "중지"} · 대기 중인 수동 요청 ${pendingRequests()}건`} · 시장 <MarketPhaseText at={renderedAt} /> · 다가오는 휴장일:{" "}
               {upcomingHolidays(st.etDate, 60)
                 .map((h) => `${h.date} ${h.name}`)
                 .join(", ") || "없음(60일 이내)"}

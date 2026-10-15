@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { getInstrument, normalizeSymbol, CATEGORY_LABELS } from "@/lib/instruments";
+import { decodeParam, getInstrument, normalizeSymbol, CATEGORY_LABELS } from "@/lib/instruments";
 import { INSTRUMENTS } from "@/config/instruments";
 import { getQuotes, delayLabel } from "@/lib/data/quotes";
 import { readNews } from "@/lib/data/news";
@@ -48,10 +48,11 @@ export default async function StockPage({ params, searchParams }: Props) {
   await perRequest();
   const { symbol: raw } = await params;
   const { tab } = await readSearchParams(searchParams);
-  const symbol = normalizeSymbol(raw);
-  const inst = getInstrument(symbol);
+  const inst = getInstrument(normalizeSymbol(decodeParam(raw)));
   if (!inst) notFound();
-  if (symbol !== decodeURIComponent(raw)) redirect(`/stock/${symbol}${tab ? `?tab=${tab}` : ""}`);
+  // 이후에는 입력값이 아니라 설정 파일의 심볼만 쓴다
+  const symbol = inst.symbol;
+  if (symbol !== decodeParam(raw)) redirect(`/stock/${encodeURIComponent(symbol)}${tab ? `?tab=${encodeURIComponent(tab)}` : ""}`);
 
   const quotes = await getQuotes([symbol], "detail");
   const q = quotes.get(symbol);

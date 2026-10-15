@@ -5,7 +5,12 @@ import { useEffect } from "react";
 export default function HashOpener() {
   useEffect(() => {
     const open = () => {
-      const id = decodeURIComponent(window.location.hash.slice(1));
+      let id = window.location.hash.slice(1);
+      try {
+        id = decodeURIComponent(id);
+      } catch {
+        // 잘못된 % 인코딩이면 그대로 쓴다
+      }
       if (!id) return;
       const el = document.getElementById(id);
       if (!el) return;

@@ -17,7 +17,8 @@ const BASE_PATH = process.env.BASE_PATH ?? "/stock_chart";
 const PORT = Number(process.env.STATIC_PORT ?? 3200);
 const ORIGIN = `http://127.0.0.1:${PORT}`;
 const BASE = `${ORIGIN}${BASE_PATH}`;
-const SHOTS = process.env.E2E_OUT ?? fs.mkdtempSync(path.join(os.tmpdir(), "usi-static-"));
+const SHOTS = path.resolve(process.env.E2E_OUT ?? fs.mkdtempSync(path.join(os.tmpdir(), "usi-static-")));
+fs.mkdirSync(SHOTS, { recursive: true });
 
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

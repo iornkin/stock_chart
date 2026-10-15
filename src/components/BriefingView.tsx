@@ -8,6 +8,7 @@ import { changeClass, fmtCompact, fmtPct, fmtPrice, fmtUsd } from "@/lib/format"
 import RelTime from "./RelTime";
 import NewsThumb from "./NewsThumb";
 import { Empty, KindBadge, Notice } from "./ui";
+import { safeLinkUrl } from "@/lib/news-utils";
 
 // ─────────────────────────────── 공용 조각 ───────────────────────────────
 
@@ -97,7 +98,7 @@ export function NewsCards({ items }: { items: BriefingNews[] }) {
         <li key={n.id} id={`news-${n.id}`} className="flex gap-3 rounded-xl border border-line p-3 transition-colors hover:border-line-strong">
           <NewsThumb src={n.image} label={n.publisher} className="h-[72px] w-24 sm:h-20 sm:w-32" />
           <div className="min-w-0 flex-1">
-            <a href={n.url} target="_blank" rel="noopener noreferrer" className="line-clamp-2 text-[15px] font-semibold leading-snug hover:text-accent">
+            <a href={safeLinkUrl(n.url)} target="_blank" rel="noopener noreferrer" className="line-clamp-2 text-[15px] font-semibold leading-snug hover:text-accent">
               {n.titleKo ?? n.title}
             </a>
             <p className="mt-1 text-xs text-muted">
@@ -114,7 +115,7 @@ export function NewsCards({ items }: { items: BriefingNews[] }) {
                   {n.summaryBasis === "ai" ? " · 요약은 AI(제목·제공처 요약문만 사용)" : n.summaryBasis === "provider" ? " · 요약은 제공처 요약문" : ""}
                 </span>
                 {n.duplicates.map((d) => (
-                  <a key={d.url} href={d.url} target="_blank" rel="noopener noreferrer" className="hover:text-accent">
+                  <a key={d.url} href={safeLinkUrl(d.url)} target="_blank" rel="noopener noreferrer" className="hover:text-accent">
                     {d.publisher ?? "출처 미상"} · {formatEt(d.publishedAt)} — {d.title}
                   </a>
                 ))}
@@ -160,7 +161,7 @@ export function EvidenceList({ items, prefix }: { items: Evidence[]; prefix: str
               {e.asOf ? `, 기준 ${e.asOf}` : ""})
             </span>
             {e.url && (
-              <a href={e.url} target="_blank" rel="noopener noreferrer" className="link ml-1">
+              <a href={safeLinkUrl(e.url)} target="_blank" rel="noopener noreferrer" className="link ml-1">
                 원문↗
               </a>
             )}

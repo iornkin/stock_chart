@@ -92,7 +92,12 @@ export default function DataManagement() {
   const applyRestore = async () => {
     if (!pending) return;
     if (!window.confirm("지금 이 브라우저에 저장된 개인 데이터를 모두 지우고 파일 내용으로 바꿉니다. 계속할까요?")) return;
-    await restoreBundle(pending.bundle);
+    try {
+      await restoreBundle(pending.bundle);
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+      return;
+    }
     setMsg({ ok: true, text: "복원했습니다. 화면을 새로 불러옵니다…" });
     setTimeout(() => location.reload(), 600);
   };

@@ -10,7 +10,7 @@ import { computeLedger, convertSimpleToLedger, ledgerTimeline } from "@/lib/port
 import { newId, TXN_KO, type PortfolioData, type SimpleHolding, type Txn, type TxnType } from "@/lib/portfolio/types";
 import { closeOn, type PriceSeries } from "@/lib/sim/series";
 import { getInstrument, normalizeSymbol } from "@/lib/instruments";
-import { formatEt, relativeTime, addDays } from "@/lib/time";
+import { formatEt, relativeTime } from "@/lib/time";
 import { Notice, Section, Empty } from "@/components/ui";
 import { categoryOf, Field, KV, LocalOnlyNote, parseNum, pct, Seg, signedKrw, signedUsd, SymbolField, tone, usd, krw } from "@/components/sim/common";
 import { SimLineChart, WeightBars } from "@/components/sim/charts";

@@ -9,7 +9,7 @@
  * - 추가 납입은 매달 초(또는 말)에 목표 비중대로 산다. 세금은 분배금에서 원천징수, 거래 비용은 매수·리밸런싱 금액에 부과.
  */
 import { mulberry32, quantile } from "./metrics";
-import { addDays, indexOnOrAfter, type PriceSeries } from "./series";
+import { addDays, indexOnOrAfter, trIndex, type PriceSeries } from "./series";
 import type { Rebalance } from "./backtest";
 
 export interface FutureHolding {
@@ -328,26 +328,14 @@ export interface HistoricalReturn {
   best: number;
 }
 
-/** 월말 총수익 지수 (배당락일 종가로 분배금 재투자) */
+/** 월말 총수익 지수 (배당락일 종가로 분배금 재투자, 공통 정의 trIndex) */
 export function monthEndTotalReturn(s: PriceSeries): { ym: string; date: string; value: number }[] {
-  const divBy = new Map<string, number>();
-  for (const d of s.divs) divBy.set(d.ex, (divBy.get(d.ex) ?? 0) + d.amount);
+  const tri = s.dates.length ? trIndex(s) : [];
   const out: { ym: string; date: string; value: number }[] = [];
-  let idx = 1;
-  let di = 0;
-  const exs = [...divBy.keys()].sort();
   for (let i = 0; i < s.dates.length; i++) {
-    if (i > 0) {
-      let div = 0;
-      while (di < exs.length && exs[di] <= s.dates[i]) {
-        if (exs[di] > s.dates[i - 1]) div += divBy.get(exs[di]) as number;
-        di++;
-      }
-      idx *= (s.close[i] + div) / s.close[i - 1];
-    } else while (di < exs.length && exs[di] <= s.dates[0]) di++;
     const ym = s.dates[i].slice(0, 7);
-    if (out.length && out[out.length - 1].ym === ym) out[out.length - 1] = { ym, date: s.dates[i], value: idx };
-    else out.push({ ym, date: s.dates[i], value: idx });
+    if (out.length && out[out.length - 1].ym === ym) out[out.length - 1] = { ym, date: s.dates[i], value: tri[i] };
+    else out.push({ ym, date: s.dates[i], value: tri[i] });
   }
   return out;
 }
@@ -668,4 +656,63 @@ export function historicalPriceCagr(s: PriceSeries, years: number): { pct: numbe
   const y = (Date.parse(to) - Date.parse(s.dates[i])) / (365.25 * 86400000);
   if (y < 1) return null;
   return { pct: (Math.pow(s.close[s.close.length - 1] / s.close[i], 1 / y) - 1) * 100, from: s.dates[i], to };
+}
+
+// ───────────────────────────── 가정 민감도 ─────────────────────────────
+
+export interface SensitivityRow {
+  key: string;
+  label: string;
+  /** 무엇을 바꿨는지 */
+  change: string;
+  finalValue: number;
+  /** 마지막 12개월 월평균 세후 분배금 */
+  monthlyIncomeNet: number;
+  diffValue: number;
+  diffValuePct: number;
+  diffIncome: number;
+}
+
+/**
+ * 한 번에 가정 하나만 바꿔 다시 계산 (나머지는 그대로) — 결과가 어떤 가정에 크게 흔들리는지 보기 위한 것.
+ * 분배금 감소는 가격 수익률을 그대로 두므로 총수익률도 그만큼 줄어든다. 급락은 '투자 시작 직후 한 번' 초기 금액에만 적용.
+ * fx 를 주면 원화 환산 결과(환율 ±10%)도 함께 보여 준다 (달러 금액은 그대로, 원화 금액만 바뀜).
+ */
+export function futureSensitivity(cfg: FutureConfig, opts: { fx?: number | null } = {}): { base: FutureResult; rows: SensitivityRow[] } {
+  const base = runFuture(cfg);
+  const variants: { key: string; label: string; change: string; cfg: FutureConfig; scale?: number }[] = [
+    { key: "ret-", label: "가격 수익률 −2%p", change: "모든 종목 연 가격 수익률 −2%p", cfg: { ...cfg, holdings: cfg.holdings.map((h) => ({ ...h, priceReturnPct: h.priceReturnPct - 2 })) } },
+    { key: "ret+", label: "가격 수익률 +2%p", change: "모든 종목 연 가격 수익률 +2%p", cfg: { ...cfg, holdings: cfg.holdings.map((h) => ({ ...h, priceReturnPct: h.priceReturnPct + 2 })) } },
+    { key: "div-", label: "분배금 −30%", change: "분배금 수익률 × 0.7 (가격 수익률은 그대로)", cfg: { ...cfg, holdings: cfg.holdings.map((h) => ({ ...h, yieldPct: h.yieldPct * 0.7 })) } },
+    { key: "tax30", label: "분배금 세율 30%", change: `세율 ${cfg.taxPct}% → 30%`, cfg: { ...cfg, taxPct: 30 } },
+    { key: "fee+", label: "연 비용 +0.5%p", change: `추가 연간 비용 ${cfg.feePct}% → ${cfg.feePct + 0.5}%`, cfg: { ...cfg, feePct: cfg.feePct + 0.5 } },
+    { key: "cost+", label: "거래 비용 +0.5%p", change: `매수·재투자·리밸런싱 비용 ${cfg.costPct}% → ${cfg.costPct + 0.5}%`, cfg: { ...cfg, costPct: cfg.costPct + 0.5 } },
+    { key: "crash", label: "시작 직후 −30% 급락", change: "초기 투자금이 시작하자마자 30% 줄었다고 가정 (이후 같은 가정)", cfg: { ...cfg, initial: cfg.initial * 0.7 } },
+  ];
+  const rows: SensitivityRow[] = variants.map((v) => {
+    const r = runFuture(v.cfg);
+    return {
+      key: v.key,
+      label: v.label,
+      change: v.change,
+      finalValue: r.finalValue,
+      monthlyIncomeNet: r.avgMonthlyIncomeNet,
+      diffValue: r.finalValue - base.finalValue,
+      diffValuePct: base.finalValue > 0 ? (r.finalValue / base.finalValue - 1) * 100 : 0,
+      diffIncome: r.avgMonthlyIncomeNet - base.avgMonthlyIncomeNet,
+    };
+  });
+  if (opts.fx && opts.fx > 0)
+    for (const k of [-10, 10])
+      rows.push({
+        key: `fx${k}`,
+        label: `원/달러 ${k > 0 ? "+" : ""}${k}% (원화 환산)`,
+        change: `달러 금액은 그대로, 원화 환산만 현재 환율 ${Math.round(opts.fx)}원 → ${Math.round(opts.fx * (1 + k / 100))}원`,
+        finalValue: base.finalValue,
+        monthlyIncomeNet: base.avgMonthlyIncomeNet,
+        diffValue: 0,
+        diffValuePct: k,
+        diffIncome: 0,
+      });
+  return { base, rows };
 }

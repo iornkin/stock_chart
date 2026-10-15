@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { briefingHistory, latestBriefing, readBriefing } from "@/lib/briefing/store";
 import type { SessionType, SymbolBriefing, MarketBriefing } from "@/lib/briefing/types";
-import { getInstrument, normalizeSymbol } from "@/lib/instruments";
+import { decodeParam, getInstrument, normalizeSymbol } from "@/lib/instruments";
 import BriefingView, { MarketBriefingView } from "@/components/BriefingView";
 import { Empty, Fold, Section } from "@/components/ui";
 import { BriefingRecordStatic } from "@/components/BriefingStaticClient";
@@ -24,9 +24,11 @@ export default async function SymbolBriefingPage({ params, searchParams }: Props
   await perRequest();
   const { symbol: raw } = await params;
   const sp = await readSearchParams(searchParams);
-  const isMarket = raw.toUpperCase() === "MARKET";
-  const scope = isMarket ? "MARKET" : normalizeSymbol(raw);
-  if (!isMarket && !getInstrument(scope)) notFound();
+  const sym = normalizeSymbol(decodeParam(raw));
+  const isMarket = sym === "MARKET";
+  const inst = isMarket ? null : getInstrument(sym);
+  if (!isMarket && !inst) notFound();
+  const scope = isMarket ? "MARKET" : (inst?.symbol as string);
   const rec =
     sp.date && sp.session
       ? readBriefing<SymbolBriefing | MarketBriefing>(scope, sp.date, sp.session as SessionType)

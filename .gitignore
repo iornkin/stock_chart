@@ -12,6 +12,7 @@ data/*.db-*
 test-results/
 playwright-report/
 screenshots/tmp/
+e2e-out/
 
 # next dev 가 자동 생성하는 에이전트 안내 파일
 AGENTS.md

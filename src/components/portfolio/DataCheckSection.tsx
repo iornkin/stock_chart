@@ -5,6 +5,9 @@ import { etToday, QUOTE_OLD_MS, useFx, useSeriesMap } from "@/lib/client/user-da
 import { heldSymbols, type PortfolioSummary } from "@/lib/client/portfolio-summary";
 import { CHECK_STATUS_KO, checkPortfolioData, type CheckItem, type CheckStatus } from "@/lib/portfolio/data-check";
 import { TXN_KO, type PortfolioData } from "@/lib/portfolio/types";
+import { applySplitToHoldings, applySplitToTxns } from "@/lib/portfolio/splits";
+
+const round4 = (v: number) => Math.round(v * 10000) / 10000;
 import { Notice, Section } from "@/components/ui";
 
 const ORDER: CheckStatus[] = ["error", "check", "missing", "stale", "ok"];
@@ -60,6 +63,23 @@ export default function DataCheckSection({ p, s, save }: { p: PortfolioData; s: 
     if (!window.confirm(`다음 ${rows.length}건을 지웁니다 (같은 내용의 기록 1건은 남김).\n\n${desc}\n\n거래 ${p.ledger.length}건 → ${p.ledger.length - rows.length}건. 계속할까요?`)) return;
     void save((cur) => ({ ...cur, ledger: cur.ledger.filter((t) => !ids.includes(t.id)) })).then(() => setMsg(`${rows.length}건을 지웠습니다. 설정 → 데이터 관리에서 백업해 두었다면 되돌릴 수 있습니다.`));
   };
+  const fixSplits = (it: CheckItem) => {
+    const fx = it.splitFix ?? [];
+    const txFix = fx.filter((f) => f.kind === "txn");
+    const hFix = fx.filter((f) => f.kind === "holding");
+    const lines = [
+      ...txFix.map((f) => {
+        const t = p.ledger.find((x) => x.id === f.id);
+        return t ? `${t.date} ${TXN_KO[t.type]} ${t.symbol}: ${t.shares}주 @$${t.price} → ${round4((t.shares ?? 0) * f.factor)}주 @$${round4((t.price ?? 0) / f.factor)}` : "";
+      }),
+      ...hFix.map((f) => {
+        const h = p.simple.holdings.find((x) => x.id === f.id);
+        return h ? `${h.symbol}: ${h.shares}주 @$${h.avgCost} → ${round4(h.shares * f.factor)}주 @$${round4(h.avgCost / f.factor)}` : "";
+      }),
+    ].filter(Boolean);
+    if (!window.confirm(`주식분할을 반영해 다음과 같이 바꿉니다 (금액은 그대로, 메모에 표시를 남김).\n\n${lines.join("\n")}\n\n계속할까요?`)) return;
+    void save((cur) => ({ ...cur, ledger: applySplitToTxns(cur.ledger, txFix), simple: { ...cur.simple, holdings: applySplitToHoldings(cur.simple.holdings, hFix) } })).then(() => setMsg(`${lines.length}건에 주식분할을 반영했습니다.`));
+  };
   return (
     <div className="flex flex-col gap-5">
       <Section title="데이터 점검" description="잘못된 기록이나 오래된 데이터로 잘못 판단하지 않도록 확인할 점을 모았습니다. 기록은 직접 확인한 뒤에만 바뀝니다.">
@@ -86,6 +106,11 @@ export default function DataCheckSection({ p, s, save }: { p: PortfolioData; s: 
               <p className="mt-1 text-xs text-ink-2">{it.cause}</p>
               {it.affects.length > 0 && <p className="mt-1 text-[11px] text-muted">영향받는 계산: {it.affects.join(", ")}</p>}
               {it.fix && <p className="mt-1 text-[11px] text-ink-2">해결 방법: {it.fix}</p>}
+              {it.splitFix && it.splitFix.length > 0 && (
+                <button type="button" className="btn btn-sm mt-2" onClick={() => fixSplits(it)}>
+                  분할 반영해 {it.splitFix.length}건 고치기 (확인 후)
+                </button>
+              )}
               {it.removable && it.removable.length > 0 && (
                 <button type="button" className="btn btn-sm mt-2" onClick={() => removeDup(it)}>
                   중복 {it.removable.length}건 지우기 (확인 후)

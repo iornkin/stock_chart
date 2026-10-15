@@ -9,21 +9,21 @@
  */
 import { monthEndTotalReturn } from "./future";
 import { drawdown, stdev } from "./metrics";
-import type { PriceSeries } from "./series";
+import { trIndex, type PriceSeries } from "./series";
 
 // ─────────────────────────────── 일간 총수익률 ───────────────────────────────
 
 /** 최근 lookbackDays 거래일의 일간 총수익률 (배당락일 분배금 보정) */
 export function dailyTotalReturns(x: PriceSeries, lookbackDays = 756): { dates: string[]; r: number[] } {
-  const divBy = new Map<string, number>();
-  for (const d of x.divs) divBy.set(d.ex, (divBy.get(d.ex) ?? 0) + d.amount);
-  const from = Math.max(1, x.dates.length - lookbackDays);
+  const from = Math.max(0, x.dates.length - lookbackDays - 1);
+  if (x.dates.length < 2) return { dates: [], r: [] };
+  const tri = trIndex(x, from, x.dates.length - 1);
   const dates: string[] = [];
   const r: number[] = [];
-  for (let i = from; i < x.dates.length; i++) {
-    if (!(x.close[i - 1] > 0)) continue;
-    dates.push(x.dates[i]);
-    r.push((x.close[i] + (divBy.get(x.dates[i]) ?? 0)) / x.close[i - 1] - 1);
+  for (let k = 1; k < tri.length; k++) {
+    if (!(x.close[from + k - 1] > 0)) continue;
+    dates.push(x.dates[from + k]);
+    r.push(tri[k] / tri[k - 1] - 1);
   }
   return { dates, r };
 }

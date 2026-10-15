@@ -90,6 +90,7 @@ export default function RebalanceSection({ p, s, save }: { p: PortfolioData; s: 
   };
 
   const pricesReady = !q.loading && !s.loading;
+  const itemsKey = JSON.stringify(items);
   const calc = useMemo((): { base: RebalResult; withFee: RebalResult } | null => {
     if (problem || !items.length || !pricesReady) return null;
     const run = (f: number): RebalResult => {
@@ -100,7 +101,7 @@ export default function RebalanceSection({ p, s, save }: { p: PortfolioData; s: 
     return { base: run(0), withFee: run(feePct) };
     // positions 는 s·q 에서 나온 값
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [problem, JSON.stringify(items), pricesReady, mode, amount, whole, feePct, cash, s.holdings, q.prices]);
+  }, [problem, itemsKey, pricesReady, mode, amount, whole, feePct, cash, s.holdings, q.prices]);
 
   const alerts = saved?.items.length && pricesReady ? driftAlerts(positions, cash, saved.items, saved.driftPct) : [];
 

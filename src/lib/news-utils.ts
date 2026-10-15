@@ -122,6 +122,11 @@ export function decodeEntities(s: string): string {
     .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)));
 }
 
+/** 제공처가 준 링크 주소 중 http(s) 만 허용 (javascript:·data: 등은 링크로 만들지 않음) */
+export function safeLinkUrl(u: unknown): string | undefined {
+  return safeImageUrl(u) ?? undefined;
+}
+
 /** 제공처가 준 이미지 주소 중 http(s) 만 허용 */
 export function safeImageUrl(u: unknown): string | null {
   if (typeof u !== "string" || !u) return null;

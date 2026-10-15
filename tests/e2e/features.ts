@@ -215,6 +215,9 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   t = await waitText(page, "요청한 기간");
   check(`${P}백테스트: 검증·재현 (요청·실제 기간, 종목별 데이터, 재현 코드)`, t.includes("실제 계산 기간") && t.includes("종목별 데이터") && /데이터 코드 [0-9a-f]{8}/.test(t) && t.includes("한계"));
   check(`${P}백테스트: 비교 공정성 점검 (같은 기간·조건·상장 전 데이터)`, t.includes("비교 공정성 점검") && /통과|주의|문제/.test(t));
+  await btTabs.getByRole("tab", { name: "위험·안정성" }).click();
+  t = await waitText(page, "소르티노 비율");
+  check(`${P}백테스트: 위험·안정성 (소르티노·칼마·VaR·CVaR·하락 기간·이동 창)`, ["소르티노 비율", "칼마 비율", "하루 VaR 95%", "하루 CVaR 95%", "가장 긴 하락 지속", "최악의 달 / 분기 / 연도"].every((x) => t.includes(x)) && !/NaN|undefined|Infinity/.test(t));
   await page.getByRole("button", { name: "결과 저장 (대시보드에 표시)" }).click();
   await page.screenshot({ path: path.join(out, `${slug}-backtest.png`), fullPage: true });
   // 사용자가 입력한 날짜 그대로
@@ -270,12 +273,34 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await scen.getByRole("tab", { name: "연도별 상세" }).click();
   t = await waitText(page, "월별 CSV");
   check(`${P}미래: 연도별 상세 (시작·납입·가격·분배금·비용·끝) + CSV`, t.includes("월별 CSV") && t.includes("납입") && !/NaN|undefined/.test(t));
+  await scen.getByRole("tab", { name: "가정 민감도" }).click();
+  t = await waitText(page, "바꾼 가정");
+  check(`${P}미래: 가정 민감도 (가정 하나씩 바꾼 결과, 영향 큰 순)`, t.includes("한 번에 가정 하나만 바꾸고") && t.includes("바꾼 가정") && !/NaN|undefined|Infinity/.test(t));
   await page.getByRole("tab", { name: "몬테카를로 (과거 수익률 분포)" }).click();
   await page.getByRole("button", { name: "몬테카를로 실행" }).click();
   t = await waitText(page, "원금 손실 확률");
   check(`${P}미래: 몬테카를로 분위수·손실 확률`, t.includes("중앙값") && t.includes("하위 5%") && t.includes("원금 손실 확률") && t.includes("사용한 과거 기간"));
   check(`${P}미래: 몬테카를로 연환산 수익률 분포·목표 확률`, t.includes("연환산") && t.includes("목표") && !/NaN|undefined/.test(t));
   await page.screenshot({ path: path.join(out, `${slug}-simulate.png`), fullPage: true });
+
+  // ── 지표 전략 검증 ──
+  await go("/backtest/strategy");
+  await page.getByRole("button", { name: "전략 백테스트 실행" }).click();
+  const stTabs = page.getByRole("tablist", { name: "전략 결과" });
+  await stTabs.waitFor({ timeout: 30000 });
+  t = await text(page);
+  check(`${P}지표 전략: 실행 → 전략·매수 후 보유 비교`, t.includes("매수 후 보유") && !/NaN|undefined|Infinity/.test(t));
+  const stSeen: string[] = [];
+  for (const [tab, needle] of [["거래 내역", "진입 (신호일)"], ["거래 통계", "승률"], ["위험·안정성", "소르티노 비율"], ["학습·평가 구간", "평가 구간 성과가 실제에 더 가까운"], ["파라미터 민감도", "학습 샤프 최고 ★"], ["워크포워드", /고른 값|데이터가 없거나/], ["시장 국면", /국면|1년 전체/]] as const) {
+    await stTabs.getByRole("tab", { name: new RegExp(`^${tab}`) }).click(); // 거래 내역 (N) 처럼 개수가 붙는 탭
+    const tt = await waitText(page, needle);
+    if ((typeof needle === "string" ? tt.includes(needle) : needle.test(tt)) && !/NaN|undefined|Infinity/.test(tt)) stSeen.push(tab);
+  }
+  check(`${P}지표 전략: 결과 탭 7개 (거래·통계·위험·학습/평가·민감도·워크포워드·국면)`, stSeen.length === 7, stSeen.join(","));
+  await stTabs.getByRole("tab", { name: "검증", exact: true }).click();
+  t = await waitText(page, "미래 정보 검사");
+  check(`${P}지표 전략: 미래 정보 검사 통과·다음 봉 체결`, t.includes("✓ 미래 정보 검사") && t.includes("같습니다") && t.includes("체결: 신호 다음 봉"));
+  await page.screenshot({ path: path.join(out, `${slug}-strategy.png`), fullPage: true });
 
   // ── 스트레스 테스트 ──
   await go("/stress");
@@ -328,6 +353,29 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await go("/stock/QQQ");
   t = await waitText(page, "≈ ₩");
   check(`${P}원화 환산 표시 (설정)`, t.includes("≈ ₩"));
+  // ── 차트 기술적 지표: 추가·파라미터·숨김·저장·제거·불러오기·새로고침 유지 ──
+  await page.getByRole("button", { name: /지표 \d+개 · 설정/ }).click();
+  const pickSel = page.getByLabel("추가할 지표");
+  await pickSel.selectOption("atr");
+  await pickSel.locator("xpath=ancestor::label/following-sibling::button[1]").click();
+  await page.getByLabel("ATR 평균 실제 범위 기간").fill("21");
+  const chips = page.locator('[aria-label="차트에 올린 지표"]');
+  t = await waitText(page, "ATR(21)");
+  check(`${P}차트 지표: 추가·파라미터 변경 (ATR 21)`, (await chips.innerText()).includes("ATR(21)") && (await page.getByRole("button", { name: /지표 6개 · 설정/ }).count()) === 1);
+  await page.getByRole("button", { name: "RSI(14) 숨기기" }).click();
+  check(`${P}차트 지표: 숨기기`, (await page.getByRole("button", { name: "RSI(14) 보이기" }).count()) === 1);
+  await page.getByLabel("지표 구성 이름").fill("e2e set");
+  await page.getByLabel("지표 구성 이름").locator("xpath=ancestor::label/following-sibling::button[1]").click();
+  await page.getByRole("button", { name: "ATR(21) 지우기" }).click();
+  await page.waitForTimeout(300);
+  const afterRemove = await chips.innerText();
+  await page.getByRole("button", { name: "불러오기: e2e set" }).click();
+  await page.waitForTimeout(300);
+  check(`${P}차트 지표: 제거 → 저장한 구성 불러오기`, !afterRemove.includes("ATR(21)") && (await chips.innerText()).includes("ATR(21)"));
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForTimeout(800);
+  t = await text(page);
+  check(`${P}차트 지표: 새로고침 후 유지 (숨김 포함)·모두 표시됨`, (await page.getByRole("button", { name: "ATR(21) 지우기" }).count()) === 1 && (await page.getByRole("button", { name: "RSI(14) 보이기" }).count()) === 1 && !t.includes("표시하지 못한 지표"));
   await go("/stock/AAPL?tab=news");
   t = await waitText(page, "관련 공시");
   check(`${P}종목 상세: 관련 공시(SEC)`, t.includes("관련 공시 (SEC EDGAR)") && t.includes("[TEST] Quarterly report"));
@@ -425,7 +473,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   // ── 모바일 가로 넘침 ──
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "ko-KR" });
   const m = await mctx.newPage();
-  for (const u of ["/portfolio", "/backtest", "/simulate", "/stress", "/strategies", "/settings", "/alerts", "/journal", "/report", "/income/target"]) {
+  for (const u of ["/portfolio", "/backtest", "/backtest/strategy", "/simulate", "/stress", "/strategies", "/settings", "/alerts", "/journal", "/report", "/income/target"]) {
     await m.goto(`${base}${u}`, { waitUntil: "networkidle" });
     await m.waitForTimeout(600);
     const overflow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

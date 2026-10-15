@@ -6,7 +6,9 @@ import { useSearchParams } from "next/navigation";
 function Reader({ onChange }: { onChange: (p: URLSearchParams) => void }) {
   const sp = useSearchParams();
   const cb = useRef(onChange);
-  cb.current = onChange;
+  useEffect(() => {
+    cb.current = onChange;
+  }, [onChange]);
   const key = sp.toString();
   useEffect(() => {
     cb.current(new URLSearchParams(key));

@@ -53,7 +53,16 @@ export function getSchedule(): ScheduleConfig {
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export function validateSchedule(input: Partial<ScheduleConfig>): { ok: true; value: ScheduleConfig } | { ok: false; error: string } {
-  const v = { ...getSchedule(), ...input };
+  // 알려진 항목만 받고, 숫자·문자·참거짓 형식을 확인한다 (NaN 은 범위 비교를 모두 통과하므로 먼저 막는다)
+  const base = getSchedule();
+  const v = { ...base };
+  for (const [k, val] of Object.entries(input ?? {})) {
+    if (!(k in DEFAULT_SCHEDULE)) return { ok: false, error: `알 수 없는 설정 항목: ${k}` };
+    const want = typeof DEFAULT_SCHEDULE[k as keyof ScheduleConfig];
+    if (want === "number" && !(typeof val === "number" && Number.isFinite(val))) return { ok: false, error: `${k} 는 숫자여야 합니다` };
+    if (want !== "number" && typeof val !== want) return { ok: false, error: `${k} 형식이 올바르지 않습니다` };
+    (v as Record<string, unknown>)[k] = val;
+  }
   for (const k of ["newsStart", "newsEnd", "referenceTime", "intradayBriefingTime", "nonTradingBriefingTime", "cleanupTime"] as const) {
     if (!TIME.test(v[k])) return { ok: false, error: `${k} 형식은 HH:MM 이어야 합니다` };
   }
@@ -62,6 +71,7 @@ export function validateSchedule(input: Partial<ScheduleConfig>): { ok: true; va
   if (v.closeBriefingDelayMin < 10 || v.closeBriefingDelayMin > 300) return { ok: false, error: "마감 후 브리핑 지연은 10~300분" };
   if (v.eodDelayMin < 5 || v.eodDelayMin > 240) return { ok: false, error: "마감 데이터 수집 지연은 5~240분" };
   if (v.maxAttempts < 1 || v.maxAttempts > 10) return { ok: false, error: "재시도 횟수는 1~10" };
+  if (v.retryDelayMin < 1 || v.retryDelayMin > 240) return { ok: false, error: "재시도 간격은 1~240분" };
   return { ok: true, value: v };
 }
 

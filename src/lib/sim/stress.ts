@@ -11,7 +11,7 @@
  *    그 구간에 데이터가 없는 종목(상장 전)은 계산하지 않는다.
  */
 import { mulberry32, normal, quantile, stdev } from "./metrics";
-import { indexOnOrBefore, isRegularDiv, type PriceSeries } from "./series";
+import { indexOnOrBefore, isRegularDiv, trIndex, type PriceSeries } from "./series";
 
 // ─────────────────────────────── 분배금 감소 ───────────────────────────────
 
@@ -83,19 +83,18 @@ export interface BetaEstimate {
 /** 공통 거래일의 일간 수익률로 시장 지수 대비 베타 추정 (최근 lookbackDays 거래일) */
 export function estimateBeta(x: PriceSeries, idx: PriceSeries, lookbackDays = 756): BetaEstimate {
   const im = new Map(idx.dates.map((d, i) => [d, idx.close[i]]));
+  // 종목은 총수익 지수(분배금 포함, 공통 정의 trIndex)로 비교
+  const tri = x.dates.length ? trIndex(x) : [];
   const pairs: { d: string; a: number; b: number }[] = [];
   for (let i = 0; i < x.dates.length; i++) {
     const c = im.get(x.dates[i]);
-    if (c !== undefined) pairs.push({ d: x.dates[i], a: x.close[i], b: c });
+    if (c !== undefined) pairs.push({ d: x.dates[i], a: tri[i], b: c });
   }
   const tail = pairs.slice(-(lookbackDays + 1));
-  // 분배금 배당락일의 가격 하락은 수익률에서 보정 (총수익 기준)
-  const divByDate = new Map<string, number>();
-  for (const d of x.divs) divByDate.set(d.ex, (divByDate.get(d.ex) ?? 0) + d.amount);
   const ra: number[] = [];
   const rb: number[] = [];
   for (let i = 1; i < tail.length; i++) {
-    ra.push((tail[i].a + (divByDate.get(tail[i].d) ?? 0)) / tail[i - 1].a - 1);
+    ra.push(tail[i].a / tail[i - 1].a - 1);
     rb.push(tail[i].b / tail[i - 1].b - 1);
   }
   if (ra.length < 120) return { symbol: x.symbol, beta: null, corr: null, days: ra.length, from: tail[0]?.d ?? null, to: tail[tail.length - 1]?.d ?? null };
@@ -277,17 +276,7 @@ function trPath(x: PriceSeries, from: string, to: string): { dates: string[]; v:
   if (i0 < 0 || x.dates[0] > from) return null;
   const i1 = indexOnOrBefore(x.dates, to);
   if (i1 <= i0) return null;
-  const divs = x.divs.filter((d) => d.ex > x.dates[i0] && d.ex <= x.dates[i1]);
-  const dates = [x.dates[i0]];
-  const v = [1];
-  let p = 0;
-  for (let i = i0 + 1; i <= i1; i++) {
-    let d = 0;
-    while (p < divs.length && divs[p].ex <= x.dates[i]) d += divs[p++].amount;
-    v.push(v[v.length - 1] * ((x.close[i] + d) / x.close[i - 1]));
-    dates.push(x.dates[i]);
-  }
-  return { dates, v };
+  return { dates: x.dates.slice(i0, i1 + 1), v: trIndex(x, i0, i1) };
 }
 
 export function episodeImpact(ep: Episode, holdings: { symbol: string; weight: number }[], series: Record<string, PriceSeries | undefined>, dataEnd: string): EpisodeImpact {

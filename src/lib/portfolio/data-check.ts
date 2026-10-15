@@ -8,6 +8,7 @@ import { computeLedger, sortTxns } from "./ledger";
 import type { PortfolioData, Txn } from "./types";
 import { TXN_KO } from "./types";
 import { addDays, closeOn, type PriceSeries } from "@/lib/sim/series";
+import { detectUnadjustedHoldings, detectUnadjustedTrades } from "./splits";
 
 export type CheckStatus = "error" | "check" | "missing" | "stale" | "ok";
 export const CHECK_STATUS_KO: Record<CheckStatus, string> = {
@@ -31,6 +32,8 @@ export interface CheckItem {
   txnIds?: string[];
   /** 지우면 해결되는 중복 거래 (사용자가 확인한 뒤에만) */
   removable?: string[];
+  /** 주식분할 반영으로 고칠 수 있는 거래·보유 (사용자가 확인한 뒤에만) */
+  splitFix?: { kind: "txn" | "holding"; id: string; factor: number }[];
 }
 
 export interface QuoteInfo {
@@ -148,9 +151,26 @@ export function checkPortfolioData(input: DataCheckInput): CheckItem[] {
       if ((t.type === "dividend" || t.type === "reinvest") && t.amount && t.tax !== undefined && t.tax > t.amount * 0.5)
         items.push({ key: `divtax:${t.id}`, status: "check", title: "분배금 세금이 분배금의 절반을 넘음", cause: `${txnLabel(t)} — 세금 $${fmt(t.tax)}`, affects: ["세후 분배금"], fix: "세금 금액을 확인하세요 (미국 원천징수는 보통 15%).", txnIds: [t.id] });
     }
-    // 5) 거래 가격이 그날 실제 종가와 크게 다름 (주식분할 전 가격·오타 가능성)
+    // 5-a) 주식분할 전 기준으로 넣은 거래 (가격 ≈ 분할 반영 종가 × 분할 비율)
+    const splitSus = detectUnadjustedTrades(p.ledger, input.series);
+    if (splitSus.length)
+      items.push({
+        key: `split:${splitSus.map((x) => x.id).join(",").slice(0, 200)}`,
+        status: "check",
+        title: `주식분할 전 기준으로 넣은 것으로 보이는 거래 ${splitSus.length}건`,
+        cause: splitSus
+          .slice(0, 5)
+          .map((x) => `${x.date} ${x.symbol} @$${fmt(x.entered)} — 분할 반영 종가 $${fmt(x.close)}, 이후 분할 ${x.splits.map((s) => `${s.date} ${s.ratio}:1`).join(", ")}`)
+          .join(" · ") + (splitSus.length > 5 ? " …" : ""),
+        affects: ["보유 수량", "평균 단가", "평가 수익률", "실현 손익", "매도 가능 수량"],
+        fix: "맞다면 아래 버튼으로 수량 × 분할 비율, 가격 ÷ 분할 비율로 바꾸세요 (거래 금액은 그대로). 이미 분할을 반영해 넣은 거래라면 그대로 두세요.",
+        txnIds: splitSus.map((x) => x.id),
+        splitFix: splitSus.map((x) => ({ kind: "txn" as const, id: x.id, factor: x.factor })),
+      });
+    const splitIds = new Set(splitSus.map((x) => x.id));
+    // 5-b) 거래 가격이 그날 실제 종가와 크게 다름 (오타·단위 가능성)
     for (const t of sorted) {
-      if (!(t.type === "buy" || t.type === "sell" || t.type === "opening") || !t.symbol || !t.price) continue;
+      if (!(t.type === "buy" || t.type === "sell" || t.type === "opening") || !t.symbol || !t.price || splitIds.has(t.id)) continue;
       const s = input.series[t.symbol];
       const c = s ? closeOn(s, t.date) : null;
       if (!c || c.date < addDays(t.date, -7)) continue;
@@ -181,9 +201,22 @@ export function checkPortfolioData(input: DataCheckInput): CheckItem[] {
         fix: "실제로 받았다면 거래 입력·내역 아래 '기록하지 않은 분배금'에서 추가하세요.",
       });
   } else {
+    // 간편 입력: 최초 매수일이 분할 전이고 평균 단가가 분할 전 기준으로 보이면 분할 반영 제안
+    const hSus = detectUnadjustedHoldings(p.simple.holdings, input.series);
+    if (hSus.length)
+      items.push({
+        key: `splith:${hSus.map((x) => x.id).join(",")}`,
+        status: "check",
+        title: `주식분할 전 기준으로 넣은 것으로 보이는 보유 종목 ${hSus.length}개`,
+        cause: hSus.map((x) => `${x.symbol} 평균 단가 $${fmt(x.entered)} (최초 매수 ${x.date} 분할 반영 종가 $${fmt(x.close)}, 이후 분할 ${x.splits.map((s) => `${s.date} ${s.ratio}:1`).join(", ")})`).join(" · "),
+        affects: ["보유 수량", "평가 수익률", "총수익률"],
+        fix: "맞다면 아래 버튼으로 수량 × 분할 비율, 평균 단가 ÷ 분할 비율로 바꾸세요.",
+        splitFix: hSus.map((x) => ({ kind: "holding" as const, id: x.id, factor: x.factor })),
+      });
+    const hSplit = new Set(hSus.map((x) => x.id));
     // 간편 입력: 평균 단가가 보유 기간 실제 가격 범위를 벗어나면 분할 전 가격·오타 가능성
     for (const h of p.simple.holdings) {
-      if (!(h.shares > 0)) continue;
+      if (!(h.shares > 0) || hSplit.has(h.id)) continue;
       const s = input.series[h.symbol];
       if (!s || !s.close.length) continue;
       const from = h.firstDate ?? s.dates[0];

@@ -27,7 +27,7 @@ export function parseCsv(text: string): string[][] {
           i++;
         } else q = false;
       } else cell += c;
-    } else if (c === '"') q = true;
+    } else if (c === '"' && cell.trim() === "") q = true; // 칸 맨 앞의 따옴표만 묶음 시작 (중간의 " 는 글자)
     else if (c === delim) {
       row.push(cell);
       cell = "";
@@ -131,12 +131,28 @@ function valid(y: number, mo: number, d: number): string | null {
 }
 
 /** "$1,234.50" "(12.3)" "-5" → 숫자. 비어 있으면 undefined, 못 읽으면 NaN */
+/**
+ * 숫자 칸 읽기: 1,234.56 / (123.45) 음수 / $·USD 표기 / 1,5 (소수점 쉼표, 쉼표 뒤 1~2자리)
+ * 16진수(0x10)·지수 표기·글자가 섞인 값은 숫자로 보지 않는다(NaN → 행 문제로 표시).
+ */
 export function parseNumber(s: string | undefined): number | undefined {
   if (s === undefined) return undefined;
-  const v = s.trim();
-  if (!v) return undefined;
-  const neg = /^\(.*\)$/.test(v);
-  const n = Number(v.replace(/[(),$\s]|USD|US\$/gi, ""));
+  let t = s.trim().replace(/US\$|USD|\$|\s/gi, "");
+  if (!t) return undefined;
+  let neg = false;
+  if (/^\(.*\)$/.test(t)) {
+    neg = true;
+    t = t.slice(1, -1);
+  }
+  if (t.startsWith("-")) {
+    neg = !neg;
+    t = t.slice(1);
+  } else if (t.startsWith("+")) t = t.slice(1);
+  let n: number;
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) n = Number(t.replace(/,/g, ""));
+  else if (/^\d+,\d{1,2}$/.test(t)) n = Number(t.replace(",", "."));
+  else if (/^(\d+\.?\d*|\.\d+)$/.test(t)) n = Number(t);
+  else return NaN;
   return Number.isFinite(n) ? (neg ? -n : n) : NaN;
 }
 

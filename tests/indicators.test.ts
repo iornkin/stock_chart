@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { bollinger, ema, macd, maxDrawdown, realizedVol, rollingVwap, rsi, sessionVwap, sma, supportResistance } from "@/lib/indicators";
+import { bollinger, ema, macd, maxDrawdown, realizedVol, rsi, sma, supportResistance } from "@/lib/indicators";
+import { rollingVwap, sessionVwap } from "@/lib/ta";
 
 describe("이동평균", () => {
   it("SMA", () => {
@@ -50,13 +51,14 @@ describe("VWAP", () => {
       { t: 2, h: 13, l: 11, c: 12, v: 100 },
       { t: 3, h: 21, l: 19, c: 20, v: 50 },
     ];
-    const v = sessionVwap(bars, (t) => (t < 3 ? "a" : "b"));
+    const b = { h: bars.map((x) => x.h), l: bars.map((x) => x.l), c: bars.map((x) => x.c), v: bars.map((x) => x.v) };
+    const v = sessionVwap(b, (i) => (bars[i].t < 3 ? "a" : "b"));
     expect(v[1]).toBeCloseTo(11);
     expect(v[2]).toBeCloseTo(20);
   });
   it("이동 VWAP", () => {
     const bars = Array.from({ length: 5 }, (_, i) => ({ t: i, h: 10, l: 10, c: 10, v: 1 + i }));
-    expect(rollingVwap(bars, 3)[4]).toBeCloseTo(10);
+    expect(rollingVwap({ h: bars.map((x) => x.h), l: bars.map((x) => x.l), c: bars.map((x) => x.c), v: bars.map((x) => x.v) }, 3)[4]).toBeCloseTo(10);
   });
 });
 

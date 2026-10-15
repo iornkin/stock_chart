@@ -11,6 +11,14 @@ function secretValues(): string[] {
   return [...new Set(parts.filter((v) => v.length >= 6))].sort((a, b) => b.length - a.length);
 }
 
+/** 객체·배열 안의 모든 문자열을 가린다 (JSON 문자열 전체에 정규식을 걸면 따옴표까지 지워 깨질 수 있음) */
+export function redactDeep<T>(value: T): T {
+  if (typeof value === "string") return redactSecrets(value) as T;
+  if (Array.isArray(value)) return value.map((v) => redactDeep(v)) as T;
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactDeep(v)])) as T;
+  return value;
+}
+
 export function redactSecrets(text: string): string {
   let out = text;
   for (const v of secretValues()) out = out.split(v).join("***");

@@ -106,6 +106,47 @@ export interface MemberStats {
   athDate: string;
 }
 
+export interface RegimeGapRow {
+  regime: "횡보" | "상승 추세" | "하락 추세";
+  windows: number;
+  /** 구간 평균: 실제 레버리지 ETF 수익률 / 기준 × 배수 / 차이 (%p) */
+  avgActual: number | null;
+  avgMultiple: number | null;
+  avgGap: number | null;
+}
+
+/** 실제 데이터로 본 '횡보장 vs 추세장'에서 배수 계산과의 차이 (63거래일 구간, 21거래일 간격) */
+export interface RegimeGap {
+  symbol: string;
+  leverage: number;
+  rows: RegimeGapRow[];
+}
+
+/** 같은 기간 기준 ETF 수익률로 구간을 나눈다: |기준| < 3% 횡보, > +10% 상승 추세, < −10% 하락 추세 */
+export function regimeGaps(base: number[], lev: number[], leverage: number, window = 63, step = 21): RegimeGapRow[] {
+  const acc: Record<RegimeGapRow["regime"], { a: number[]; m: number[] }> = { 횡보: { a: [], m: [] }, "상승 추세": { a: [], m: [] }, "하락 추세": { a: [], m: [] } };
+  for (let e = window; e < base.length; e += step) {
+    const b = (base[e] / base[e - window] - 1) * 100;
+    const a = (lev[e] / lev[e - window] - 1) * 100;
+    const rg = Math.abs(b) < 3 ? "횡보" : b > 10 ? "상승 추세" : b < -10 ? "하락 추세" : null;
+    if (!rg) continue;
+    acc[rg].a.push(a);
+    acc[rg].m.push(b * leverage);
+  }
+  const avg = (xs: number[]) => (xs.length ? xs.reduce((p, q) => p + q, 0) / xs.length : null);
+  return (["횡보", "상승 추세", "하락 추세"] as const).map((rg) => {
+    const x = acc[rg];
+    const aa = avg(x.a);
+    const mm = avg(x.m);
+    return { regime: rg, windows: x.a.length, avgActual: aa, avgMultiple: mm, avgGap: aa !== null && mm !== null ? aa - mm : null };
+  });
+}
+
+/** 낙폭에서 원래 값으로 돌아가는 데 필요한 상승률 (%): −50% → +100% */
+export function recoveryNeededPct(drawdownPct: number): number | null {
+  return drawdownPct > -100 ? (1 / (1 + drawdownPct / 100) - 1) * 100 : null;
+}
+
 export interface LeverageAnalysis {
   group: LeverageGroup;
   base: string;
@@ -119,6 +160,7 @@ export interface LeverageAnalysis {
   rolling: RollingStat[];
   /** 차트용 (주 단위로 줄인 총수익 지수, 시작 100) */
   chart: { dates: string[]; series: Record<string, number[]> };
+  regimeGaps: RegimeGap[];
   excluded: { symbol: string; reason: string }[];
   dataAsOf: string;
 }
@@ -309,7 +351,8 @@ export function analyzeAligned(group: LeverageGroup, baseSymbol: string, dates: 
     series: Object.fromEntries(series.map((s) => [s.symbol, pick.map((i) => Math.round((s.tr[i] / s.tr[0]) * 10000) / 100)])),
   };
 
-  return { group, base: baseSymbol, start: dates[0], end, days: dates.length, members, periods, years, episodes: episodes.reverse(), rolling, chart };
+  const gaps: RegimeGap[] = series.filter((x) => x.symbol !== baseSymbol && x.leverage !== 1).map((x) => ({ symbol: x.symbol, leverage: x.leverage, rows: regimeGaps(base.tr, x.tr, x.leverage) }));
+  return { group, base: baseSymbol, start: dates[0], end, days: dates.length, members, periods, years, episodes: episodes.reverse(), rolling, chart, regimeGaps: gaps };
 }
 
 // ─────────────────────────────── DB 에서 불러오기 ───────────────────────────────
