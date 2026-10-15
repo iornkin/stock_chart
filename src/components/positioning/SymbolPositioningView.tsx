@@ -11,6 +11,7 @@ import { HOLDING_STATUS_KO, ageDays, holdingChange, isStale, putCallSummary, sen
 import type { MarketSentimentData, SymbolPositioning } from "@/lib/data/positioning";
 import { Empty, Fold, Notice, Section, SourceLine, Stat } from "@/components/ui";
 import { ColumnSvg, LineSvg } from "./Charts";
+import { fgLabel } from "./FearGreed";
 
 const signedPct = (v: number | null, d = 1) => (v === null || !Number.isFinite(v) ? "-" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(d)}%`);
 const signedInt = (v: number | null) => (v === null ? "-" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${fmtInt(Math.abs(v))}`);
@@ -222,7 +223,15 @@ export default function SymbolPositioningView({ data, market, now }: { data: Sym
       </Section>
 
       {/* ── 시장 전체 (참고) ── */}
-      <Section title="시장 전체 투자심리 (참고 — 이 종목 값 아님)" right={<Link href="/sentiment" className="text-xs link">시장 심리 전체 보기</Link>}>
+      <Section
+        title="시장 전체 투자심리 (참고 — 이 종목 값 아님)"
+        description="설문·거래 통계·CNN 지수 — 실제 포지션이 아닙니다"
+        right={
+          <Link href="/sentiment" className="text-xs link">
+            시장 심리 전체 보기
+          </Link>
+        }
+      >
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Stat label="AAII 강세 / 약세" value={sent?.latest ? `${sent.latest.bullish.toFixed(1)}% / ${sent.latest.bearish.toFixed(1)}%` : "자료 없음"} sub={sent?.latest ? `설문 마감 ${sent.latest.week} · 개인 투자자 6개월 전망` : undefined} />
           <Stat label="강세 − 약세" value={sent?.latest ? `${sent.latest.spread > 0 ? "+" : sent.latest.spread < 0 ? "−" : ""}${Math.abs(sent.latest.spread).toFixed(1)}%p` : "-"} />
@@ -231,7 +240,11 @@ export default function SymbolPositioningView({ data, market, now }: { data: Sym
             value={eqLast ? (ratio(eqLast.putVolume, eqLast.callVolume)?.toFixed(2) ?? "-") : "자료 없음"}
             sub={eqLast ? `${eqLast.date} · Cboe 거래소 주식 옵션 전체${publishedRatioConsistent(ratio(eqLast.putVolume, eqLast.callVolume), eqLast.published) === false ? " · 공표값과 다름" : ""}` : undefined}
           />
-          <Stat label="자료 성격" value={<span className="text-xs font-normal">설문·거래 통계 (포지션 아님)</span>} />
+          <Stat
+            label="CNN 공포·탐욕 (0~100)"
+            value={market.fearGreed ? `${market.fearGreed.now.score.toFixed(0)} · ${fgLabel(market.fearGreed.now.score, market.fearGreed.now.rating)}` : "자료 없음"}
+            sub={market.fearGreed ? `CNN ${formatEt(market.fearGreed.now.at)} · 시장 전체` : undefined}
+          />
         </div>
       </Section>
     </div>

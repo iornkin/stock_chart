@@ -36,6 +36,7 @@ const env: NodeJS.ProcessEnv = {
   FINRA_CDN_BASE: `${M}/finra-cdn`,
   CBOE_CDN_BASE: `${M}/cboe-cdn`,
   AAII_BASE: `${M}/aaii`,
+  CNN_DATAVIZ_BASE: `${M}/cnn`,
   SEC_USER_AGENT: "USI-E2E test@example.com",
   POLYGON_API_KEY: "",
   ALPHAVANTAGE_API_KEY: "",

@@ -120,19 +120,36 @@ export interface LineSeriesDef {
 }
 
 /** 같은 단위의 선 차트 (축 하나). refLines 는 기준선(예: 0, 평균) */
-export function LineSvg({ dates, series, fmt, ariaLabel, height = 200, refLines = [] }: { dates: string[]; series: LineSeriesDef[]; fmt: Fmt; ariaLabel: string; height?: number; refLines?: { value: number; label: string }[] }) {
+export function LineSvg({
+  dates,
+  series,
+  fmt,
+  ariaLabel,
+  height = 200,
+  refLines = [],
+  domain,
+}: {
+  dates: string[];
+  series: LineSeriesDef[];
+  fmt: Fmt;
+  ariaLabel: string;
+  height?: number;
+  refLines?: { value: number; label: string }[];
+  /** 축 범위 고정 (예: 0~100 지수). 없으면 값에 맞춤 */
+  domain?: [number, number];
+}) {
   const [hover, setHover] = useState<number | null>(null);
   const vals = series.flatMap((s) => s.values).filter((v): v is number => v !== null && Number.isFinite(v));
   if (!dates.length || !vals.length) return null;
   const padL = 44, padB = 20, top = 8, padR = 8;
   const innerH = height - padB - top;
-  let lo = Math.min(...vals, ...refLines.map((r) => r.value));
-  let hi = Math.max(...vals, ...refLines.map((r) => r.value));
+  let lo = domain ? domain[0] : Math.min(...vals, ...refLines.map((r) => r.value));
+  let hi = domain ? domain[1] : Math.max(...vals, ...refLines.map((r) => r.value));
   if (hi === lo) {
     hi += 1;
     lo -= 1;
   }
-  const pad = (hi - lo) * 0.08;
+  const pad = domain ? 0 : (hi - lo) * 0.08;
   lo -= pad;
   hi += pad;
   const X = (i: number) => padL + (dates.length === 1 ? (W - padL - padR) / 2 : (i / (dates.length - 1)) * (W - padL - padR));

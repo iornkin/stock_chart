@@ -42,6 +42,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   await go("/");
   let t = await waitText(page, "입력 전에는 금액을 표시하지 않습니다");
   check(`${P}대시보드: 자산 입력 전 개인 금액 표시 안 함`, t.includes("입력 전에는 금액을 표시하지 않습니다") && t.includes("내 자산 입력"));
+  check(`${P}대시보드: CNN 공포·탐욕 지수 한 줄 (시장 심리 화면 연결)`, /공포·탐욕 \(CNN\)\s*\d{1,3}\s*(극단적 공포|공포|중립|탐욕|극단적 탐욕)/.test(t) && (await page.locator('a[href*="/sentiment"][href$="#fear-greed"]').count()) === 1);
 
   // ── 내 자산: 간편 입력 ──
   await go("/portfolio");
@@ -310,6 +311,7 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   check(`${P}포지션: 풋/콜 거래량·미결제약정 기준 따로, 방향성 단정 안 함`, t.includes("풋/콜 (거래량)") && t.includes("풋/콜 (미결제약정)") && t.includes("순매수·순매도 중인지 알 수 없습니다"));
   check(`${P}포지션: 13F 보고 기간·제출일·직전 대비 (줄임)`, t.includes("[TEST] BERKSHIRE HATHAWAY INC") && t.includes("보고 기간 말") && t.includes("제출일") && t.includes("줄임") && t.includes("지금 보유량이 아닙니다"));
   check(`${P}포지션: 시장 전체 심리는 '이 종목 값 아님'으로 분리, 롱·숏 비율 만들지 않음`, t.includes("시장 전체 투자심리 (참고 — 이 종목 값 아님)") && t.includes("롱과 숏의 비율") && !/NaN|undefined|Infinity/.test(t));
+  check(`${P}포지션: 시장 참고에 CNN 공포·탐욕 (시장 전체 표시)`, t.includes("CNN 공포·탐욕 (0~100)") && t.includes("시장 전체"));
   await go("/stock/GLDM?tab=positioning");
   t = await waitText(page, "이 종목의 옵션 통계가 없습니다", 15000);
   check(`${P}포지션: 옵션 없는 종목은 시장 값으로 채우지 않음 (GLDM)`, t.includes("시장 전체 비율을 이 종목 값으로 대신 쓰지 않습니다"));
@@ -320,6 +322,19 @@ export async function featureChecks(browser: Browser, base: string, out: string,
   t = await waitText(page, "실제 롱·숏 비율은 왜 없나요?", 20000);
   check(`${P}시장 심리: AAII 강세·중립·약세·스프레드·장기 평균·모집단 안내`, t.includes("개인 투자자 투자심리 설문 (AAII)") && t.includes("강세 − 약세") && t.includes("장기 평균 37.5%") && t.includes("AAII 회원 개인 투자자") && (await page.getByRole("img", { name: "AAII 주간 강세·중립·약세 비율" }).count()) === 1);
   check(`${P}시장 심리: Cboe 풋/콜 (Cboe 거래소 기준·공표값 대조)`, t.includes("시장 전체 옵션 풋/콜 비율 (Cboe)") && t.includes("Cboe 공표값") && t.includes("미국 옵션 시장 전체(OCC 집계)가 아니라"));
+  check(
+    `${P}공포·탐욕: CNN 지수·판정·계기·비교 값·일별 추이`,
+    t.includes("공포·탐욕 지수 (CNN Fear & Greed Index)") &&
+      (await page.getByRole("img", { name: /^공포·탐욕 지수 \d{1,3} — / }).count()) === 1 &&
+      (await page.getByRole("img", { name: "CNN 공포·탐욕 지수 일별 추이" }).count()) === 1 &&
+      t.includes("직전 장 마감 (CNN)") &&
+      t.includes("1년 전 (CNN)") &&
+      /최근 1년 최저 \d+ \(\d{4}-\d{2}-\d{2}\), 최고 \d+/.test(t),
+  );
+  check(
+    `${P}공포·탐욕: 구성 지표 7개, 점수 없는 지표는 데이터 미제공 (채우지 않음), CNN 값임을 안내`,
+    t.includes("구성 지표 7개") && ["시장 모멘텀", "주가 강도", "시장 폭", "풋·콜 옵션", "시장 변동성", "정크본드 수요", "안전자산 수요"].every((x) => t.includes(x)) && t.includes("안전자산 수요 최근 20거래일 주식 수익률 − 국채 수익률 데이터 미제공 - 데이터 미제공") && t.includes("이 사이트가 계산한 값이 아닙니다") && t.includes("125일 평균"),
+  );
   check(`${P}시장 심리: 기관 13F 상위 보유·롱·숏 비율 미지원 이유`, t.includes("기관 투자자 공시 보유 (SEC 13F)") && t.includes("[TEST] MORGAN STANLEY") && t.includes("미지원 — 신뢰할 수 있는 공개 자료가 없음") && t.includes("NAAIM") && !/NaN|undefined|Infinity/.test(t));
   await page.screenshot({ path: path.join(out, `${slug}-sentiment.png`), fullPage: true });
 

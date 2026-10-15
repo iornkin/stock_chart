@@ -47,6 +47,7 @@ const ENV: Record<string, string> = {
   FINRA_CDN_BASE: `${M}/finra-cdn`,
   CBOE_CDN_BASE: `${M}/cboe-cdn`,
   AAII_BASE: `${M}/aaii`,
+  CNN_DATAVIZ_BASE: `${M}/cnn`,
   SEC_USER_AGENT: "USI-E2E test@example.com",
   ADMIN_TOKEN: "e2e-admin",
   POLYGON_API_KEY: "",
@@ -143,6 +144,8 @@ async function main() {
       const cnt = (sql: string) => (d.prepare(sql).get() as { n: number }).n;
       check("포지션: 공매도 잔고(FINRA)·공매도 거래량·Cboe·AAII 저장 (서로 다른 표)", cnt("SELECT count(*) AS n FROM short_interest WHERE symbol='AAPL'") > 10 && cnt("SELECT count(*) AS n FROM short_volume WHERE symbol='AAPL'") >= 20 && cnt("SELECT count(*) AS n FROM option_market WHERE product='total'") > 100 && cnt("SELECT count(*) AS n FROM sentiment_survey") >= 10);
       check("포지션: 종목 옵션 합계 저장, 옵션 없는 종목(GLDM)은 저장 안 함", cnt("SELECT count(*) AS n FROM option_stats WHERE symbol='AAPL'") === 1 && cnt("SELECT count(*) AS n FROM option_stats WHERE symbol='GLDM'") === 0);
+      const fgMax = (d.prepare("SELECT max(date) AS m FROM fear_greed").get() as { m: string | null }).m;
+      check("공포·탐욕: CNN 일별 기록 저장 (약 2년), 수집 기준일 뒤 진행 중인 날은 저장 안 함", cnt("SELECT count(*) AS n FROM fear_greed") > 400 && fgMax === marketStatus().lastCompletedSession && cnt("SELECT count(*) AS n FROM snapshots WHERE kind='cnn_fear_greed'") === 1, `${cnt("SELECT count(*) AS n FROM fear_greed")}일, 마지막 ${fgMax}`);
       check("포지션: 13F 제출 7건 (기관 3곳 × 2분기 + 추가 보고 정정 1)", cnt("SELECT count(*) AS n FROM inst_filings") === 7, String(cnt("SELECT count(*) AS n FROM inst_filings")));
       const fake = d.prepare("SELECT count(*) AS n FROM news n JOIN news_symbols s ON s.news_id=n.id WHERE s.symbol='QQQ'").get() as { n: number };
       check("QQQ 뉴스 저장", fake.n > 0, `${fake.n}건`);

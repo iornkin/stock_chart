@@ -93,4 +93,5 @@ export const STALE_DAYS = {
   options: 7, // 매 거래일 (장 마감 후 수집)
   marketOptions: 7,
   thirteenF: 200, // 분기 말 + 45일 이내 제출 → 다음 분기 공시 전까지 쓰임
+  fearGreed: 5, // CNN 이 장중·장 마감 후 갱신 (주말·휴장 포함 여유)
 };

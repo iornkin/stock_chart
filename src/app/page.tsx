@@ -9,6 +9,8 @@ import { latestBriefing, latestBriefingRecords } from "@/lib/briefing/store";
 import type { MarketBriefing, SymbolBriefing } from "@/lib/briefing/types";
 import { digestOf, type BriefingDigest } from "@/lib/briefing/digest";
 import { leverageRiskSnapshot } from "@/lib/leverage";
+import { readFearGreedNow } from "@/lib/data/positioning";
+import { fgLabel } from "@/components/positioning/FearGreed";
 import ChangeChips from "@/components/ChangeChips";
 import { marketStatus } from "@/lib/market-calendar";
 import { addDays, formatEt } from "@/lib/time";
@@ -107,6 +109,7 @@ export default async function Dashboard() {
   const marketSyms = MARKET_SYMBOLS.map((m) => m.symbol);
   const quotes = await getQuotes([...universe, ...marketSyms], "list");
   const health = dataHealth();
+  const fearGreed = readFearGreedNow();
   const core = coreSymbols();
   const today = st.etDate;
 
@@ -201,7 +204,17 @@ export default async function Dashboard() {
             <IndexTile key={m.symbol} symbol={m.symbol} name={m.nameKo} q={quotes.get(m.symbol)} note={m.note} />
           ))}
         </div>
-        <ul aria-label="금리·환율·금·변동성" className="-mx-1 flex gap-x-4 gap-y-1 overflow-x-auto px-1 pb-1 text-xs sm:flex-wrap">
+        <ul aria-label="공포·탐욕·금리·환율·금·변동성" className="-mx-1 flex gap-x-4 gap-y-1 overflow-x-auto px-1 pb-1 text-xs sm:flex-wrap">
+          {/* 모바일에서는 가로로 넘기는 줄이라 맨 앞에 둔다 */}
+          {fearGreed && (
+            <li className="flex shrink-0 items-baseline gap-1.5 whitespace-nowrap" title={`CNN 공포·탐욕 지수 (0 극단적 공포 ~ 100 극단적 탐욕) · CNN ${formatEt(fearGreed.now.at)} 기준`}>
+              <Link href="/sentiment#fear-greed" className="flex items-baseline gap-1.5 hover:text-accent">
+                <span className="text-muted">공포·탐욕 (CNN)</span>
+                <span className="num font-semibold">{fearGreed.now.score.toFixed(0)}</span>
+                <span>{fgLabel(fearGreed.now.score, fearGreed.now.rating)}</span>
+              </Link>
+            </li>
+          )}
           {MARKET_SYMBOLS.filter((m) => !m.headline).map((m) => {
             const q = quotes.get(m.symbol);
             if (!q || q.price === null) return null;

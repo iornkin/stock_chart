@@ -39,6 +39,7 @@ const MIN_INTERVAL: Record<string, number> = {
   finra: 400,
   cboe: 250,
   aaii: 2000,
+  cnn: 1000,
   anthropic: 0,
 };
 

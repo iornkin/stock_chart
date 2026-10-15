@@ -8,6 +8,7 @@ import { formatEt } from "@/lib/time";
 import { perRequest } from "@/lib/page-mode";
 import { Empty, Fold, Notice, PageHeader, Section, SourceLine, Stat } from "@/components/ui";
 import { LineSvg, StackedShareBars } from "@/components/positioning/Charts";
+import { FearGreedSection } from "@/components/positioning/FearGreed";
 
 export const metadata = { title: "시장 심리·포지션" };
 
@@ -43,8 +44,16 @@ export default async function SentimentPage() {
 
   return (
     <div className="flex flex-col">
-      <PageHeader title="시장 심리·포지션" description="투자심리 설문, 시장 전체 옵션 통계, 기관 13F 공시를 따로 보여 줍니다. 서로 다른 자료를 합쳐 하나의 점수나 롱·숏 비율로 만들지 않습니다." />
+      <PageHeader
+        title="시장 심리·포지션"
+        description="CNN 공포·탐욕 지수, 투자심리 설문, 시장 전체 옵션 통계, 기관 13F 공시를 따로 보여 줍니다. 이 사이트가 서로 다른 자료를 합쳐 새 점수나 롱·숏 비율을 만들지 않습니다 (공포·탐욕 지수는 CNN 이 공표한 값)."
+      />
       <div className="flex flex-col gap-5">
+        {/* ── CNN 공포·탐욕 ── */}
+        <Section id="fear-greed" title="공포·탐욕 지수 (CNN Fear & Greed Index)" description="CNN 이 주가 모멘텀·변동성·옵션·채권 등 7개 지표로 만든 시장 분위기 지수 — 값은 CNN 그대로">
+          {d.fearGreed ? <FearGreedSection fg={d.fearGreed} now={now} /> : <Empty>CNN 공포·탐욕 지수가 아직 수집되지 않았거나 받지 못했습니다 (데이터 미제공).</Empty>}
+        </Section>
+
         {/* ── AAII ── */}
         <Section title="개인 투자자 투자심리 설문 (AAII)" description="실제 매수·매도 포지션이 아니라 '앞으로 6개월 시장 방향' 전망 설문입니다">
           {s?.latest ? (
@@ -283,7 +292,7 @@ export default async function SentimentPage() {
               </tbody>
             </table>
           </div>
-          <SourceLine>조사 시점의 공개 정보 기준이며 제공처의 조건은 바뀔 수 있습니다. 종합 심리 점수도 만들지 않았습니다 — 서로 다른 자료를 임의 가중치로 합친 점수는 검증할 방법이 없어 사실처럼 보일 위험이 큽니다.</SourceLine>
+          <SourceLine>조사 시점의 공개 정보 기준이며 제공처의 조건은 바뀔 수 있습니다. 이 사이트가 자체 종합 심리 점수도 만들지 않았습니다 — 서로 다른 자료를 임의 가중치로 합친 점수는 검증할 방법이 없어 사실처럼 보일 위험이 큽니다. 맨 위의 공포·탐욕 지수는 CNN 이 공표한 값을 그대로 보여 주는 것입니다.</SourceLine>
         </Section>
       </div>
     </div>
